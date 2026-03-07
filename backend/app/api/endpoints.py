@@ -10,22 +10,24 @@ PUT    /api/workflows/{id}              Update workflow
 DELETE /api/workflows/{id}              Delete workflow
 POST   /api/workflows/{id}/execute      Execute workflow for a patient
 POST   /api/lab-event                   Simulate lab event → auto-execute matching workflows
+POST   /api/elevenlabs/webhook          ElevenLabs post-call webhook
 POST   /api/twilio/voice                TwiML webhook (Say + Gather)
 POST   /api/twilio/gather               Handle keypress response
 GET    /api/call-logs                   List execution logs
+POST   /api/call-logs/{id}/check        Poll ElevenLabs for call result (local dev alternative to webhook)
 """
 from __future__ import annotations
 
-import json
-import uuid
+import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, Response
-from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
 import app.services.supabase_service as db
 from app.services.workflow_engine import execute_workflow
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -155,19 +157,20 @@ async def execute_workflow_endpoint(workflow_id: str, body: ExecuteRequest):
     })
     log_id = log_row["id"]
 
-    # Run the engine
-    execution_log = execute_workflow(
+    # Run the engine (async)
+    execution_log = await execute_workflow(
         workflow=wf,
         patient=patient,
         trigger_node_type=body.trigger_node_type,
         call_log_id=log_id,
+        doctor_id=wf.get("doctor_id"),
     )
 
     # Determine final status
     has_error = any(s.get("status") == "error" for s in execution_log)
     final_status = "failed" if has_error else "completed"
 
-    updated_log = db.update_call_log(log_id, {
+    db.update_call_log(log_id, {
         "status": final_status,
         "execution_log": execution_log,
     })
@@ -216,11 +219,12 @@ async def lab_event(body: LabEventRequest):
         })
         log_id = log_row["id"]
 
-        execution_log = execute_workflow(
+        execution_log = await execute_workflow(
             workflow=wf,
             patient=patient,
             trigger_node_type=body.trigger_type,
             call_log_id=log_id,
+            doctor_id=wf.get("doctor_id") or body.doctor_id,
         )
 
         has_error = any(s.get("status") == "error" for s in execution_log)
@@ -244,7 +248,189 @@ async def lab_event(body: LabEventRequest):
 
 
 # ---------------------------------------------------------------------------
-# Twilio webhooks
+# ElevenLabs post-call webhook
+# ---------------------------------------------------------------------------
+
+@router.post("/elevenlabs/webhook")
+async def elevenlabs_webhook(request: Request):
+    """
+    Receives the post-call payload from ElevenLabs after a conversation ends.
+
+    Expected shape (ElevenLabs Conversational AI webhook):
+    {
+      "type": "conversation_ended" | ...,
+      "conversation_id": "...",
+      "data": {
+        "analysis": {
+          "data_collection_results": {
+            "call_outcome":              {"value": "appointment_booked", ...},
+            "patient_confirmed":         {"value": "true", ...},
+            "confirmed_date":            {"value": "2026-03-10", ...},
+            "confirmed_time":            {"value": "14:00", ...},
+            "doctor_name":               {"value": "Dr. Smith", ...},
+            "patient_availability_notes": {"value": "...", ...},
+          }
+        },
+        "transcript": "..."
+      }
+    }
+
+    If ``patient_confirmed`` is true, creates a Google Calendar event for the
+    doctor and updates the call_log.
+    """
+    from app.services.google_calendar_service import create_calendar_event
+
+    payload = await request.json()
+    logger.info("ElevenLabs webhook received: type=%s", payload.get("type"))
+
+    # ---- extract conversation_id ----
+    conversation_id = payload.get("conversation_id") or payload.get("data", {}).get("conversation_id")
+    if not conversation_id:
+        logger.warning("ElevenLabs webhook missing conversation_id")
+        return {"success": False, "error": "missing conversation_id"}
+
+    # ---- extract data collection results ----
+    data_section = payload.get("data", {})
+    analysis = data_section.get("analysis", {})
+    dcr = analysis.get("data_collection_results", {})
+
+    def _dcr_val(key: str) -> str:
+        """Unwrap ElevenLabs DCR format: {"value": X, "rationale": "..."} → X."""
+        entry = dcr.get(key, {})
+        if isinstance(entry, dict):
+            return str(entry.get("value", ""))
+        return str(entry)
+
+    call_outcome = _dcr_val("call_outcome")
+    patient_confirmed_raw = _dcr_val("patient_confirmed")
+    confirmed_date = _dcr_val("confirmed_date")
+    confirmed_time = _dcr_val("confirmed_time")
+    doctor_name = _dcr_val("doctor_name")
+    availability_notes = _dcr_val("patient_availability_notes")
+    transcript = data_section.get("transcript", "")
+
+    patient_confirmed = patient_confirmed_raw.lower() in ("true", "yes", "1")
+
+    # ---- find the call_log row that matches this conversation ----
+    # The workflow engine stored conversation_id in the execution_log.
+    # We search call_logs for a running entry whose execution_log contains
+    # this conversation_id.
+    call_log = _find_call_log_by_conversation_id(conversation_id)
+
+    if not call_log:
+        logger.warning("No call_log found for conversation_id=%s", conversation_id)
+        return {"success": False, "error": "no matching call_log"}
+
+    log_id = call_log["id"]
+
+    # ---- update call_log with outcome ----
+    update_payload: dict[str, Any] = {
+        "outcome": call_outcome or "call_completed",
+        "status": "completed",
+    }
+
+    # Store ElevenLabs data in a separate column or merge into execution_log
+    elevenlabs_data = {
+        "conversation_id": conversation_id,
+        "call_outcome": call_outcome,
+        "patient_confirmed": patient_confirmed,
+        "confirmed_date": confirmed_date,
+        "confirmed_time": confirmed_time,
+        "doctor_name": doctor_name,
+        "patient_availability_notes": availability_notes,
+        "transcript": transcript[:5000] if transcript else "",
+    }
+
+    # Merge ElevenLabs data into the existing execution_log
+    existing_log = call_log.get("execution_log") or []
+    existing_log.append({
+        "node_id": "elevenlabs_webhook",
+        "node_type": "webhook",
+        "label": "ElevenLabs Call Completed",
+        "status": "ok",
+        "message": f"Call outcome: {call_outcome}. Patient confirmed: {patient_confirmed}.",
+        **elevenlabs_data,
+    })
+    update_payload["execution_log"] = existing_log
+
+    db.update_call_log(log_id, update_payload)
+
+    # ---- if patient confirmed, create Google Calendar event ----
+    calendar_event = None
+    if patient_confirmed and confirmed_date:
+        doctor_id = call_log.get("doctor_id") or _get_doctor_id_from_workflow(call_log.get("workflow_id"))
+        patient_id = call_log.get("patient_id")
+        patient = db.get_patient(patient_id) if patient_id else None
+        patient_name = patient.get("name", "Patient") if patient else "Patient"
+
+        start_iso = f"{confirmed_date}T{confirmed_time or '09:00'}:00"
+        try:
+            calendar_event = await create_calendar_event(
+                auth0_user_id=doctor_id,
+                summary=f"Patient Appointment: {patient_name}",
+                start_iso=start_iso,
+                description=(
+                    f"Follow-up appointment for {patient_name}.\n"
+                    f"Scheduled via MedTrigger workflow.\n"
+                    f"Call outcome: {call_outcome}"
+                ),
+                attendee_email=patient.get("email") if patient else None,
+            )
+            logger.info("Calendar event created: %s", calendar_event.get("id"))
+
+            # Append calendar step to execution log
+            existing_log.append({
+                "node_id": "calendar_auto",
+                "node_type": "schedule_appointment",
+                "label": "Google Calendar Event Created",
+                "status": "ok",
+                "message": f"Event: {calendar_event.get('htmlLink', '')}",
+                "calendar_event_id": calendar_event.get("id"),
+            })
+            db.update_call_log(log_id, {"execution_log": existing_log})
+        except Exception as exc:
+            logger.exception("Failed to create calendar event after ElevenLabs call")
+            existing_log.append({
+                "node_id": "calendar_auto",
+                "node_type": "schedule_appointment",
+                "label": "Google Calendar Event Failed",
+                "status": "error",
+                "message": str(exc),
+            })
+            db.update_call_log(log_id, {"execution_log": existing_log})
+
+    return {
+        "success": True,
+        "call_log_id": log_id,
+        "patient_confirmed": patient_confirmed,
+        "calendar_event_id": calendar_event.get("id") if calendar_event else None,
+    }
+
+
+def _find_call_log_by_conversation_id(conversation_id: str) -> dict | None:
+    """
+    Search recent call_logs for one whose execution_log contains the given
+    conversation_id.
+    """
+    logs = db.list_call_logs()
+    for log in logs:
+        exec_log = log.get("execution_log") or []
+        for step in exec_log:
+            if step.get("conversation_id") == conversation_id:
+                return log
+    return None
+
+
+def _get_doctor_id_from_workflow(workflow_id: str | None) -> str | None:
+    """Look up the doctor_id from the workflow record."""
+    if not workflow_id:
+        return None
+    wf = db.get_workflow(workflow_id)
+    return wf.get("doctor_id") if wf else None
+
+
+# ---------------------------------------------------------------------------
+# Twilio webhooks (fallback for non-ElevenLabs calls)
 # ---------------------------------------------------------------------------
 
 @router.post("/twilio/voice")
@@ -253,7 +439,6 @@ async def twilio_voice(request: Request, log_id: str | None = None):
     TwiML webhook — Twilio calls this when the patient picks up.
     Returns a <Say> + <Gather> response.
     """
-    # We read the call log to get any custom message
     call_log: dict = {}
     if log_id:
         call_log = db.get_call_log(log_id) or {}
@@ -264,7 +449,7 @@ async def twilio_voice(request: Request, log_id: str | None = None):
         "Press 2 to request a callback."
     )
 
-    gather_url = f"/api/twilio/gather"
+    gather_url = "/api/twilio/gather"
     if log_id:
         gather_url += f"?log_id={log_id}"
 
@@ -322,3 +507,174 @@ async def twilio_gather(request: Request, log_id: str | None = None):
 @router.get("/call-logs")
 async def list_call_logs(workflow_id: str | None = None):
     return db.list_call_logs(workflow_id=workflow_id)
+
+
+# ---------------------------------------------------------------------------
+# Poll ElevenLabs for call result (local dev — no webhook needed)
+# ---------------------------------------------------------------------------
+
+@router.post("/call-logs/{log_id}/check")
+async def check_call_status(log_id: str):
+    """
+    Polls ElevenLabs for the conversation result and processes it.
+
+    Use this instead of the webhook during local development (no ngrok needed).
+    The frontend can call this endpoint periodically or on-demand after a call
+    is initiated.
+
+    Flow:
+      1. Find the call_log row → extract conversation_id from its execution_log
+      2. Call ElevenLabs GET /v1/convai/conversations/{id}
+      3. If the conversation is done, extract data collection results
+      4. Update call_log with outcome
+      5. If patient confirmed an appointment → create Google Calendar event
+    """
+    from app.services.elevenlabs_service import get_conversation
+    from app.services.google_calendar_service import create_calendar_event
+
+    call_log = db.get_call_log(log_id)
+    if not call_log:
+        raise HTTPException(status_code=404, detail="Call log not found")
+
+    # Already completed? Return current state.
+    if call_log.get("status") == "completed":
+        return {
+            "status": "completed",
+            "call_log": call_log,
+            "message": "Call already processed.",
+        }
+
+    # Find conversation_id from execution_log
+    conversation_id = None
+    exec_log = call_log.get("execution_log") or []
+    for step in exec_log:
+        if step.get("conversation_id"):
+            conversation_id = step["conversation_id"]
+            break
+
+    if not conversation_id:
+        return {
+            "status": "waiting",
+            "message": "No conversation_id found — call may not have been initiated yet.",
+        }
+
+    # Poll ElevenLabs
+    try:
+        conversation = await get_conversation(conversation_id)
+    except Exception as exc:
+        logger.warning("Failed to poll ElevenLabs: %s", exc)
+        return {
+            "status": "polling_error",
+            "message": str(exc),
+        }
+
+    conv_status = conversation.get("status", "unknown")
+
+    # If conversation is still in progress, return early
+    if conv_status in ("in_progress", "processing"):
+        return {
+            "status": "in_progress",
+            "message": "Call is still in progress.",
+            "conversation_status": conv_status,
+        }
+
+    # Conversation is done — extract data collection results
+    analysis = conversation.get("analysis", {})
+    dcr = analysis.get("data_collection_results", {})
+
+    def _dcr_val(key: str) -> str:
+        entry = dcr.get(key, {})
+        if isinstance(entry, dict):
+            return str(entry.get("value", ""))
+        return str(entry)
+
+    call_outcome = _dcr_val("call_outcome")
+    patient_confirmed_raw = _dcr_val("patient_confirmed")
+    confirmed_date = _dcr_val("confirmed_date")
+    confirmed_time = _dcr_val("confirmed_time")
+    doctor_name = _dcr_val("doctor_name")
+    availability_notes = _dcr_val("patient_availability_notes")
+    transcript = conversation.get("transcript", "")
+
+    patient_confirmed = patient_confirmed_raw.lower() in ("true", "yes", "1")
+
+    # Update call_log
+    elevenlabs_data = {
+        "conversation_id": conversation_id,
+        "call_outcome": call_outcome,
+        "patient_confirmed": patient_confirmed,
+        "confirmed_date": confirmed_date,
+        "confirmed_time": confirmed_time,
+        "doctor_name": doctor_name,
+        "patient_availability_notes": availability_notes,
+        "transcript": transcript[:5000] if isinstance(transcript, str) else "",
+    }
+
+    exec_log.append({
+        "node_id": "elevenlabs_poll",
+        "node_type": "poll_result",
+        "label": "ElevenLabs Call Completed (polled)",
+        "status": "ok",
+        "message": f"Call outcome: {call_outcome}. Patient confirmed: {patient_confirmed}.",
+        **elevenlabs_data,
+    })
+
+    update_payload: dict[str, Any] = {
+        "outcome": call_outcome or "call_completed",
+        "status": "completed",
+        "execution_log": exec_log,
+    }
+    db.update_call_log(log_id, update_payload)
+
+    # If patient confirmed → create Google Calendar event
+    calendar_event = None
+    if patient_confirmed and confirmed_date:
+        doctor_id = _get_doctor_id_from_workflow(call_log.get("workflow_id"))
+        patient_id = call_log.get("patient_id")
+        patient = db.get_patient(patient_id) if patient_id else None
+        patient_name = patient.get("name", "Patient") if patient else "Patient"
+
+        start_iso = f"{confirmed_date}T{confirmed_time or '09:00'}:00"
+        try:
+            calendar_event = await create_calendar_event(
+                auth0_user_id=doctor_id,
+                summary=f"Patient Appointment: {patient_name}",
+                start_iso=start_iso,
+                description=(
+                    f"Follow-up appointment for {patient_name}.\n"
+                    f"Scheduled via MedTrigger workflow.\n"
+                    f"Call outcome: {call_outcome}"
+                ),
+                attendee_email=patient.get("email") if patient else None,
+            )
+            logger.info("Calendar event created via polling: %s", calendar_event.get("id"))
+
+            exec_log.append({
+                "node_id": "calendar_poll",
+                "node_type": "schedule_appointment",
+                "label": "Google Calendar Event Created",
+                "status": "ok",
+                "message": f"Event: {calendar_event.get('htmlLink', '')}",
+                "calendar_event_id": calendar_event.get("id"),
+            })
+            db.update_call_log(log_id, {"execution_log": exec_log})
+        except Exception as exc:
+            logger.exception("Calendar event creation failed during polling")
+            exec_log.append({
+                "node_id": "calendar_poll",
+                "node_type": "schedule_appointment",
+                "label": "Google Calendar Event Failed",
+                "status": "error",
+                "message": str(exc),
+            })
+            db.update_call_log(log_id, {"execution_log": exec_log})
+
+    return {
+        "status": "completed",
+        "call_outcome": call_outcome,
+        "patient_confirmed": patient_confirmed,
+        "confirmed_date": confirmed_date,
+        "confirmed_time": confirmed_time,
+        "calendar_event_id": calendar_event.get("id") if calendar_event else None,
+        "call_log_id": log_id,
+    }

@@ -146,3 +146,10 @@ export async function listCallLogs(workflowId?: string) {
   const response = await fetch(`${API_URL}/api/call-logs${qs ? `?${qs}` : ''}`);
   return response.json();
 }
+
+export async function checkCallStatus(callLogId: string) {
+  const response = await fetch(`${API_URL}/api/call-logs/${callLogId}/check`, {
+    method: 'POST',
+  });
+  return response.json();
+}

@@ -17,6 +17,16 @@ class Settings(BaseSettings):
     twilio_auth_token: str = ""
     twilio_phone_number: str = ""
 
+    # ElevenLabs Conversational AI
+    elevenlabs_api_key: str = ""
+    elevenlabs_agent_id: str = ""
+    elevenlabs_phone_number_id: str = ""
+
+    # Auth0 (for fetching Google tokens via Management API)
+    auth0_domain: str = ""
+    auth0_client_id: str = ""
+    auth0_client_secret: str = ""
+
     # App
     app_base_url: str = "http://localhost:8000"
 
