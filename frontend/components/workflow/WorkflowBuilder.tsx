@@ -20,6 +20,7 @@ import {
   type Connection,
   type NodeTypes,
   BackgroundVariant,
+  SelectionMode,
 } from '@xyflow/react';
 
 import { NodePalette } from './NodePalette';
@@ -40,7 +41,7 @@ import {
 } from '@/services/api';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
-import { ArrowUpRight, Undo2, Redo2 } from 'lucide-react';
+import { ArrowUpRight, Undo2, Redo2, MousePointer2, Hand } from 'lucide-react';
 import dagre from 'dagre';
 import { CmdHoverContext } from './CmdHoverContext';
 
@@ -155,6 +156,7 @@ function FlowContent() {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+  const [selectMode, setSelectMode] = useState(true);
 
   // ── Cmd+hover connection state ──────────────────────────────────────
   const [cmdHeld, setCmdHeld] = useState(false);
@@ -281,13 +283,23 @@ function FlowContent() {
     setCanRedo(false);
   }, []);
 
-  // Debounced history recording on node/edge changes
+  // Debounced history recording — only structural changes (not position/selection moves)
   useEffect(() => {
     if (isUndoRedoRef.current) {
       isUndoRedoRef.current = false;
       return;
     }
     const timer = setTimeout(() => {
+      const last = historyRef.current[historyIndexRef.current];
+      const stripNode = (n: Node) => ({ id: n.id, type: n.type, data: n.data });
+      const stripEdge = (e: Edge) => ({ id: e.id, source: e.source, target: e.target, sourceHandle: e.sourceHandle, targetHandle: e.targetHandle, data: e.data });
+      const nodesKey = JSON.stringify(nodes.map(stripNode));
+      const edgesKey = JSON.stringify(edges.map(stripEdge));
+      if (last) {
+        const lastNodesKey = JSON.stringify(last.nodes.map(stripNode));
+        const lastEdgesKey = JSON.stringify(last.edges.map(stripEdge));
+        if (nodesKey === lastNodesKey && edgesKey === lastEdgesKey) return;
+      }
       pushHistory(nodes, edges);
     }, 300);
     return () => clearTimeout(timer);
@@ -322,9 +334,13 @@ function FlowContent() {
     setCanRedo(newIdx < historyRef.current.length - 1);
   }, [setNodes, setEdges]);
 
-  // Keyboard shortcuts for undo/redo
+  // Keyboard shortcuts for undo/redo + select/pan mode
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // Skip if user is typing in an input/textarea
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
       if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
         e.preventDefault();
         undo();
@@ -333,6 +349,8 @@ function FlowContent() {
         e.preventDefault();
         redo();
       }
+      if (e.key === 'v' && !e.metaKey && !e.ctrlKey) setSelectMode(true);
+      if (e.key === 'h' && !e.metaKey && !e.ctrlKey) setSelectMode(false);
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
@@ -658,6 +676,24 @@ function FlowContent() {
               <Redo2 className="h-3.5 w-3.5" />
             </button>
           </div>
+
+          {/* Select / Pan mode toggle */}
+          <div className="flex items-center gap-0.5 ml-1 border-l border-border pl-2">
+            <button
+              onClick={() => setSelectMode(true)}
+              title="Select mode (V)"
+              className={`p-1 rounded transition-colors ${selectMode ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+            >
+              <MousePointer2 className="h-3.5 w-3.5" />
+            </button>
+            <button
+              onClick={() => setSelectMode(false)}
+              title="Pan mode (H)"
+              className={`p-1 rounded transition-colors ${!selectMode ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+            >
+              <Hand className="h-3.5 w-3.5" />
+            </button>
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
@@ -735,6 +771,9 @@ function FlowContent() {
             nodeTypes={nodeTypes}
             defaultEdgeOptions={defaultEdgeOptions}
             fitView
+            selectionOnDrag={selectMode}
+            panOnDrag={selectMode ? [1, 2] : true}
+            selectionMode={SelectionMode.Partial}
             proOptions={{ hideAttribution: true }}
             deleteKeyCode="Delete"
           >

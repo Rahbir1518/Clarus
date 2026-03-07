@@ -43,6 +43,13 @@
   --color-warning-foreground: var(--warning-foreground);
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
+  --color-sage-50: var(--sage-50);
+  --color-sage-100: var(--sage-100);
+  --color-sage-200: var(--sage-200);
+  --color-sage: var(--sage);
+  --color-sage-400: var(--sage-400);
+  --color-sage-500: var(--sage-500);
+  --color-sage-600: var(--sage-600);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -54,27 +61,34 @@
 
 /* Clarus Design System — Light Red Theme */
 :root {
-  --background: #FAFAF8;
+  --background: #F2F4F0;
   --foreground: #1A1118;
-  --card: #FFFFFF;
+  --card: #F8F9F6;
   --card-foreground: #1A1118;
-  --popover: #FFFFFF;
+  --popover: #F8F9F6;
   --popover-foreground: #1A1118;
   --primary: #C43B3B;
   --primary-foreground: #FFFFFF;
-  --secondary: #FFF5F5;
+  --secondary: #E2E6DC;
   --secondary-foreground: #1A1118;
-  --muted: #F5F0F1;
+  --muted: #E8EBE4;
   --muted-foreground: #7A6E75;
-  --accent: #FFF5F5;
-  --accent-foreground: #C43B3B;
+  --accent: #E2E6DC;
+  --accent-foreground: #5A6350;
   --destructive: #DC2626;
   --warning: #E8825E;
   --warning-foreground: #FFFFFF;
   --success: #2D8B5A;
   --success-foreground: #FFFFFF;
-  --border: #EDE6E8;
-  --input: #EDE6E8;
+  --sage-50: #F0F2ED;
+  --sage-100: #E2E6DC;
+  --sage-200: #D4D9CC;
+  --sage: #C7CDBF;
+  --sage-400: #AEB5A5;
+  --sage-500: #959D8B;
+  --sage-600: #7A8370;
+  --border: #DDE1D9;
+  --input: #DDE1D9;
   --ring: #C43B3B;
   --chart-1: #C43B3B;
   --chart-2: #E8825E;
@@ -82,13 +96,13 @@
   --chart-4: #2D8B5A;
   --chart-5: #A83232;
   --radius: 0.625rem;
-  --sidebar: #FFFFFF;
+  --sidebar: #F8F9F6;
   --sidebar-foreground: #1A1118;
   --sidebar-primary: #C43B3B;
   --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-accent: #FFF5F5;
+  --sidebar-accent: #E2E6DC;
   --sidebar-accent-foreground: #1A1118;
-  --sidebar-border: #EDE6E8;
+  --sidebar-border: #DDE1D9;
   --sidebar-ring: #C43B3B;
 }
 
