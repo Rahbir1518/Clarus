@@ -167,6 +167,9 @@ async def _handle_call_patient(node: dict, context: dict) -> tuple[bool, dict]:
     node_data = node.get("data", {})
     params = node_data.get("params", {})
     lab_summary = params.get("lab_result_summary", "Your recent lab results are ready.")
+    facility_name = params.get("facility_name", "")
+    facility_address = params.get("facility_address", "")
+    call_reason = params.get("call_reason", "")
 
     try:
         result = await initiate_outbound_call(
@@ -174,6 +177,9 @@ async def _handle_call_patient(node: dict, context: dict) -> tuple[bool, dict]:
             patient_name=patient_name,
             doctor_name=doctor_name,
             lab_result_summary=lab_summary,
+            facility_name=facility_name,
+            facility_address=facility_address,
+            call_reason=call_reason,
             extra_context={
                 "call_log_id": call_log_id or "",
                 "workflow_id": context.get("workflow_id", ""),

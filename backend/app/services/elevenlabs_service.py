@@ -27,6 +27,9 @@ async def initiate_outbound_call(
     patient_name: str,
     doctor_name: str,
     lab_result_summary: str | None = None,
+    facility_name: str | None = None,
+    facility_address: str | None = None,
+    call_reason: str | None = None,
     extra_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
@@ -60,6 +63,9 @@ async def initiate_outbound_call(
         "patient_name": patient_name,
         "doctor_name": doctor_name,
         "lab_result_summary": lab_result_summary or "recent lab results",
+        "facility_name": facility_name or "your doctor's office",
+        "facility_address": facility_address or "",
+        "call_reason": call_reason or "recent lab results",
         **(extra_context or {}),
     }
 
