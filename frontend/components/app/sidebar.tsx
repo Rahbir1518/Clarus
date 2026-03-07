@@ -45,7 +45,7 @@ export function Sidebar() {
               className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors",
                 isActive
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                  ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium border-l-2 border-sage"
                   : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
               )}
             >
@@ -65,7 +65,7 @@ export function Sidebar() {
               className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors",
                 isActive
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                  ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium border-l-2 border-sage"
                   : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
               )}
             >

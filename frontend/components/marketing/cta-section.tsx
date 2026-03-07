@@ -1,6 +1,6 @@
 export function CtaSection() {
   return (
-    <section className="py-28 md:py-40">
+    <section className="bg-sage-50 py-28 md:py-40">
       <div className="mx-auto max-w-7xl px-6">
         <h2 className="max-w-3xl font-serif text-5xl leading-tight tracking-tight md:text-7xl">
           Stop chasing patients.

@@ -3,8 +3,8 @@ export function FeaturesSection() {
     <section className="py-20 md:py-28">
       <div className="mx-auto max-w-7xl space-y-6 px-6">
         {/* Card 1: Smart Triggers — text left, visual right */}
-        <div className="grid overflow-hidden rounded-2xl border border-border md:grid-cols-2">
-          <div className="flex flex-col justify-center p-10 md:p-14">
+        <div className="mx-auto max-w-5xl grid overflow-hidden rounded-2xl border border-border md:grid-cols-2">
+          <div className="flex flex-col justify-center p-8 md:p-10">
             <h3 className="font-serif text-3xl tracking-tight md:text-4xl">
               Smart Triggers
             </h3>
@@ -14,37 +14,24 @@ export function FeaturesSection() {
               scoped per doctor or clinic-wide.
             </p>
           </div>
-          <div className="flex items-center justify-center bg-[#F8F6F4] p-10 md:p-14">
-            {/* Abstract trigger config visual */}
-            <div className="w-full max-w-xs space-y-3">
-              <div className="flex items-center gap-3">
-                <div className="h-3 w-3 rounded-full bg-primary/30" />
-                <div className="h-2.5 w-32 rounded bg-foreground/8" />
-              </div>
-              <div className="rounded-lg border border-foreground/5 bg-white p-4">
-                <div className="space-y-2.5">
-                  <div className="flex items-center gap-2">
-                    <div className="h-2 w-2 rounded-full bg-green-400/60" />
-                    <div className="h-2 w-24 rounded bg-foreground/10" />
-                  </div>
-                  <div className="ml-4 space-y-2 border-l-2 border-primary/15 pl-3">
-                    <div className="h-2 w-36 rounded bg-foreground/6" />
-                    <div className="h-2 w-28 rounded bg-foreground/6" />
-                    <div className="h-2 w-32 rounded bg-foreground/6" />
-                  </div>
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <div className="h-2.5 w-16 rounded bg-foreground/6" />
-                <div className="h-2.5 w-20 rounded bg-foreground/6" />
-              </div>
+          <div className="flex items-center justify-end">
+            <div className="w-[70%] overflow-hidden rounded-lg border border-border">
+              <video
+                className="w-[calc(100%+59px)] max-w-none -ml-[24px] -mt-[5px] -mb-[10px]"
+                autoPlay
+                loop
+                muted
+                playsInline
+              >
+                <source src="/assets/workflow_demo.mp4" type="video/mp4" />
+              </video>
             </div>
           </div>
         </div>
 
         {/* Card 2: Automated Calls — visual left, text right */}
-        <div className="grid overflow-hidden rounded-2xl border border-border md:grid-cols-2">
-          <div className="flex items-center justify-center bg-[#F8F6F4] p-10 md:p-14">
+        <div className="mx-auto max-w-5xl grid overflow-hidden rounded-2xl border border-border md:grid-cols-2">
+          <div className="flex items-center justify-start p-8 md:p-10">
             {/* Abstract waveform / call log visual */}
             <div className="w-full max-w-xs">
               <div className="flex items-end gap-[3px]">
@@ -52,7 +39,7 @@ export function FeaturesSection() {
                   (h, i) => (
                     <div
                       key={i}
-                      className="w-2 rounded-sm bg-foreground/10 transition-colors"
+                      className="w-2 rounded-sm bg-sage transition-colors"
                       style={{ height: `${h}px` }}
                     />
                   )
@@ -63,7 +50,7 @@ export function FeaturesSection() {
                   (h, i) => (
                     <div
                       key={i}
-                      className="w-2 rounded-sm bg-foreground/6"
+                      className="w-2 rounded-sm bg-sage-200"
                       style={{ height: `${h}px` }}
                     />
                   )
@@ -76,7 +63,7 @@ export function FeaturesSection() {
               </div>
             </div>
           </div>
-          <div className="flex flex-col justify-center p-10 md:p-14">
+          <div className="flex flex-col justify-center p-8 md:p-10">
             <h3 className="font-serif text-3xl tracking-tight md:text-4xl">
               Automated Calls
             </h3>

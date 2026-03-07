@@ -41,7 +41,7 @@ export default function ContactPage() {
           </p>
           <h1 className="mt-6 max-w-4xl font-serif text-5xl leading-tight tracking-tight md:text-7xl">
             Let&apos;s talk about{" "}
-            <span className="text-primary/40">automating</span> your clinic.
+            <span className="text-sage-400">automating</span> your clinic.
           </h1>
           <div className="mt-10 h-px w-full max-w-md bg-border" />
           <p className="mt-8 max-w-lg text-base leading-relaxed text-muted-foreground">
