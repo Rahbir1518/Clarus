@@ -9,17 +9,13 @@
     "lint": "eslint"
   },
   "dependencies": {
-<<<<<<< HEAD
     "@auth0/auth0-react": "^2.15.0",
-    "@supabase/supabase-js": "^2.98.0",
-=======
     "@base-ui/react": "^1.2.0",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.5.0",
     "@supabase/supabase-js": "^2.98.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
->>>>>>> 004aa6977952688d89290588ee109bcf28f9e1ae
     "lucide-react": "^0.577.0",
     "next": "16.1.6",
     "react": "19.2.3",

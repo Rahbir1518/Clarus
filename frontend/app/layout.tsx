@@ -20,14 +20,9 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-<<<<<<< HEAD
-  title: "Clarus — Clinical Workflow Automation",
-  description: "Intelligent clinical workflow automation platform for healthcare providers",
-=======
   title: "Clarus — Intelligent Clinical Workflow Automation",
   description:
     "Automate patient follow-up workflows with event-driven triggers. When a lab report arrives, Clarus contacts patients and books appointments automatically.",
->>>>>>> 004aa6977952688d89290588ee109bcf28f9e1ae
 };
 
 export default function RootLayout({
@@ -39,6 +34,7 @@ export default function RootLayout({
     <html lang="en">
       <body
         className={`${dmSans.variable} ${instrumentSerif.variable} ${jetbrainsMono.variable} antialiased`}
+        suppressHydrationWarning
       >
         <Auth0ProviderWrapper>{children}</Auth0ProviderWrapper>
       </body>
