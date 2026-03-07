@@ -3,6 +3,7 @@
 import '@xyflow/react/dist/style.css';
 
 import { useState, useCallback, useRef, useEffect, type DragEvent } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useAuth0 } from '@auth0/auth0-react';
 import {
   ReactFlow,
@@ -32,6 +33,7 @@ import {
   createWorkflow,
   updateWorkflow,
   listWorkflows,
+  getWorkflow,
   executeWorkflow,
   listPatients,
   createPatient,
@@ -119,6 +121,7 @@ const EXAMPLE_EDGES: Edge[] = [
 function FlowContent() {
   const { screenToFlowPosition, fitView } = useReactFlow();
   const { user } = useAuth0();
+  const searchParams = useSearchParams();
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -148,6 +151,29 @@ function FlowContent() {
   const [newPatientName, setNewPatientName] = useState('');
   const [newPatientPhone, setNewPatientPhone] = useState('');
   const [addingPatient, setAddingPatient] = useState(false);
+
+  // ── Auto-load workflow from URL query param ─────────────────────────
+  useEffect(() => {
+    const workflowId = searchParams.get('id');
+    if (!workflowId) return;
+    (async () => {
+      try {
+        const wf = await getWorkflow(workflowId);
+        if (wf && wf.id) {
+          const loadedNodes: Node[] = Array.isArray(wf.nodes) ? wf.nodes : [];
+          const loadedEdges: Edge[] = Array.isArray(wf.edges) ? wf.edges : [];
+          setNodes(loadedNodes);
+          setEdges(loadedEdges);
+          setSavedWorkflowId(wf.id);
+          setWorkflowName(wf.name ?? '');
+          setWorkflowDescription(wf.description ?? '');
+          setTimeout(() => fitView({ padding: 0.15, duration: 400 }), 100);
+        }
+      } catch {
+        // silently fail — user can load manually
+      }
+    })();
+  }, [searchParams, setNodes, setEdges, fitView]);
 
   // ── Connections ───────────────────────────────────────────────────────
 
@@ -417,7 +443,7 @@ function FlowContent() {
       {/* ── Toolbar ──────────────────────────────────────────────────────── */}
       <header className="h-12 shrink-0 flex items-center justify-between px-4 border-b border-gray-800 bg-gray-900">
         <div className="flex items-center gap-2">
-          <span className="text-indigo-400 font-bold text-sm tracking-widest">CLARUS</span>
+          <a href="/dashboard" className="text-indigo-400 font-bold text-sm tracking-widest hover:text-indigo-300 transition-colors">CLARUS</a>
           <span className="text-gray-700 text-sm">/</span>
           <span className="text-gray-400 text-sm">
             {workflowName ? workflowName : 'Workflow Builder'}

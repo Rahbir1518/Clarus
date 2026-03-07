@@ -59,6 +59,65 @@ class PatientCreate(BaseModel):
     name: str
     phone: str
     doctor_id: str
+    dob: str | None = None
+    mrn: str | None = None
+    insurance: str | None = None
+    primary_physician: str | None = None
+    last_visit: str | None = None
+    risk_level: str = "low"
+    notes: str | None = None
+
+
+class PatientUpdate(BaseModel):
+    name: str | None = None
+    phone: str | None = None
+    dob: str | None = None
+    mrn: str | None = None
+    insurance: str | None = None
+    primary_physician: str | None = None
+    last_visit: str | None = None
+    risk_level: str | None = None
+    notes: str | None = None
+
+
+class ConditionCreate(BaseModel):
+    icd10_code: str
+    description: str
+    hcc_category: str | None = None
+    raf_impact: float = 0
+    status: str = "documented"
+
+
+class ConditionUpdate(BaseModel):
+    icd10_code: str | None = None
+    description: str | None = None
+    hcc_category: str | None = None
+    raf_impact: float | None = None
+    status: str | None = None
+
+
+class MedicationCreate(BaseModel):
+    name: str
+    dosage: str | None = None
+    frequency: str | None = None
+    route: str | None = None
+    prescriber: str | None = None
+    start_date: str | None = None
+    end_date: str | None = None
+    status: str = "active"
+    notes: str | None = None
+
+
+class MedicationUpdate(BaseModel):
+    name: str | None = None
+    dosage: str | None = None
+    frequency: str | None = None
+    route: str | None = None
+    prescriber: str | None = None
+    start_date: str | None = None
+    end_date: str | None = None
+    status: str | None = None
+    notes: str | None = None
 
 
 class ExecuteRequest(BaseModel):
@@ -87,6 +146,104 @@ async def create_patient(body: PatientCreate):
     payload = body.model_dump()
     sb = db.get_supabase()
     return sb.table("patients").insert(payload).execute().data[0]
+
+
+@router.get("/patients/{patient_id}")
+async def get_patient(patient_id: str):
+    patient = db.get_patient(patient_id)
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    return patient
+
+
+@router.put("/patients/{patient_id}")
+async def update_patient(patient_id: str, body: PatientUpdate):
+    patient = db.get_patient(patient_id)
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    payload = {k: v for k, v in body.model_dump().items() if v is not None}
+    if not payload:
+        return patient
+    return db.update_patient(patient_id, payload)
+
+
+@router.delete("/patients/{patient_id}", status_code=204)
+async def delete_patient(patient_id: str):
+    patient = db.get_patient(patient_id)
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    sb = db.get_supabase()
+    sb.table("patients").delete().eq("id", patient_id).execute()
+
+
+# ---------------------------------------------------------------------------
+# Patient conditions
+# ---------------------------------------------------------------------------
+
+@router.get("/patients/{patient_id}/conditions")
+async def list_conditions(patient_id: str):
+    patient = db.get_patient(patient_id)
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    return db.list_conditions(patient_id)
+
+
+@router.post("/patients/{patient_id}/conditions", status_code=201)
+async def create_condition(patient_id: str, body: ConditionCreate):
+    patient = db.get_patient(patient_id)
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    payload = body.model_dump()
+    payload["patient_id"] = patient_id
+    return db.create_condition(payload)
+
+
+@router.put("/patients/{patient_id}/conditions/{condition_id}")
+async def update_condition(patient_id: str, condition_id: str, body: ConditionUpdate):
+    payload = {k: v for k, v in body.model_dump().items() if v is not None}
+    if not payload:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    return db.update_condition(condition_id, payload)
+
+
+@router.delete("/patients/{patient_id}/conditions/{condition_id}", status_code=204)
+async def delete_condition(patient_id: str, condition_id: str):
+    db.delete_condition(condition_id)
+
+
+# ---------------------------------------------------------------------------
+# Patient medications
+# ---------------------------------------------------------------------------
+
+@router.get("/patients/{patient_id}/medications")
+async def list_medications(patient_id: str):
+    patient = db.get_patient(patient_id)
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    return db.list_medications(patient_id)
+
+
+@router.post("/patients/{patient_id}/medications", status_code=201)
+async def create_medication(patient_id: str, body: MedicationCreate):
+    patient = db.get_patient(patient_id)
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    payload = body.model_dump()
+    payload["patient_id"] = patient_id
+    return db.create_medication(payload)
+
+
+@router.put("/patients/{patient_id}/medications/{medication_id}")
+async def update_medication(patient_id: str, medication_id: str, body: MedicationUpdate):
+    payload = {k: v for k, v in body.model_dump().items() if v is not None}
+    if not payload:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    return db.update_medication(medication_id, payload)
+
+
+@router.delete("/patients/{patient_id}/medications/{medication_id}", status_code=204)
+async def delete_medication(patient_id: str, medication_id: str):
+    db.delete_medication(medication_id)
 
 
 # ---------------------------------------------------------------------------
@@ -505,8 +662,11 @@ async def twilio_gather(request: Request, log_id: str | None = None):
 # ---------------------------------------------------------------------------
 
 @router.get("/call-logs")
-async def list_call_logs(workflow_id: str | None = None):
-    return db.list_call_logs(workflow_id=workflow_id)
+async def list_call_logs(
+    workflow_id: str | None = None,
+    doctor_id: str | None = None,
+):
+    return db.list_call_logs(workflow_id=workflow_id, doctor_id=doctor_id)
 
 
 # ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useCallback } from "react";
+import { Suspense, useEffect, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAuth0 } from "@auth0/auth0-react";
 import Link from "next/link";
@@ -102,6 +102,14 @@ const faqs = [
 ];
 
 export default function PricingPage() {
+  return (
+    <Suspense fallback={null}>
+      <PricingContent />
+    </Suspense>
+  );
+}
+
+function PricingContent() {
   const { isAuthenticated, loginWithRedirect } = useAuth0();
   const searchParams = useSearchParams();
 

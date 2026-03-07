@@ -94,6 +94,54 @@ def list_patients(doctor_id: str | None = None) -> list[dict]:
     return q.execute().data
 
 
+def update_patient(patient_id: str, payload: dict) -> dict:
+    sb = get_supabase()
+    return (
+        sb.table("patients")
+        .update(payload)
+        .eq("id", patient_id)
+        .execute()
+        .data[0]
+    )
+
+
+# ---------------------------------------------------------------------------
+# Patient-condition helpers
+# ---------------------------------------------------------------------------
+
+def list_conditions(patient_id: str) -> list[dict]:
+    sb = get_supabase()
+    return (
+        sb.table("patient_conditions")
+        .select("*")
+        .eq("patient_id", patient_id)
+        .order("created_at", desc=True)
+        .execute()
+        .data
+    )
+
+
+def create_condition(payload: dict) -> dict:
+    sb = get_supabase()
+    return sb.table("patient_conditions").insert(payload).execute().data[0]
+
+
+def update_condition(condition_id: str, payload: dict) -> dict:
+    sb = get_supabase()
+    return (
+        sb.table("patient_conditions")
+        .update(payload)
+        .eq("id", condition_id)
+        .execute()
+        .data[0]
+    )
+
+
+def delete_condition(condition_id: str) -> None:
+    sb = get_supabase()
+    sb.table("patient_conditions").delete().eq("id", condition_id).execute()
+
+
 # ---------------------------------------------------------------------------
 # Call-log helpers
 # ---------------------------------------------------------------------------
@@ -120,9 +168,61 @@ def update_call_log(log_id: str, payload: dict) -> dict:
     )
 
 
-def list_call_logs(workflow_id: str | None = None) -> list[dict]:
+def list_call_logs(
+    workflow_id: str | None = None,
+    doctor_id: str | None = None,
+) -> list[dict]:
     sb = get_supabase()
     q = sb.table("call_logs").select("*")
     if workflow_id:
         q = q.eq("workflow_id", workflow_id)
+    if doctor_id:
+        patient_ids = [
+            p["id"]
+            for p in sb.table("patients")
+            .select("id")
+            .eq("doctor_id", doctor_id)
+            .execute()
+            .data
+        ]
+        if not patient_ids:
+            return []
+        q = q.in_("patient_id", patient_ids)
     return q.order("created_at", desc=True).execute().data
+
+
+# ---------------------------------------------------------------------------
+# Patient-medication helpers
+# ---------------------------------------------------------------------------
+
+def list_medications(patient_id: str) -> list[dict]:
+    sb = get_supabase()
+    return (
+        sb.table("patient_medications")
+        .select("*")
+        .eq("patient_id", patient_id)
+        .order("created_at", desc=True)
+        .execute()
+        .data
+    )
+
+
+def create_medication(payload: dict) -> dict:
+    sb = get_supabase()
+    return sb.table("patient_medications").insert(payload).execute().data[0]
+
+
+def update_medication(medication_id: str, payload: dict) -> dict:
+    sb = get_supabase()
+    return (
+        sb.table("patient_medications")
+        .update(payload)
+        .eq("id", medication_id)
+        .execute()
+        .data[0]
+    )
+
+
+def delete_medication(medication_id: str) -> None:
+    sb = get_supabase()
+    sb.table("patient_medications").delete().eq("id", medication_id).execute()
