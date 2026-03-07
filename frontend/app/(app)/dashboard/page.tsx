@@ -441,17 +441,9 @@ export default function DashboardPage() {
 
           {/* Workflow progress */}
           <div className="rounded-xl border border-border bg-card p-5">
-            <div className="mb-5 flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-semibold">Workflow Progress</h3>
-                <p className="mt-0.5 text-xs text-muted-foreground">Current automation lifecycle status</p>
-              </div>
-              <Link href="/triggers/new">
-                <Button>
-                  <Activity className="size-4" data-icon="inline-start" />
-                  Open Workflow
-                </Button>
-              </Link>
+            <div className="mb-5">
+              <h3 className="text-sm font-semibold">Workflow Progress</h3>
+              <p className="mt-0.5 text-xs text-muted-foreground">Current automation lifecycle status</p>
             </div>
             <div className="flex items-center">
               {WORKFLOW_STEPS.map((step, idx) => {
@@ -476,14 +468,14 @@ export default function DashboardPage() {
 
         {/* Right column — Insights */}
         <div className="space-y-4">
-          {/* Beacon insights */}
+          {/* Clarus insights */}
           <div className="rounded-xl border border-border bg-card p-4">
             <div className="mb-4 flex items-center gap-2">
               <div className="flex size-7 items-center justify-center rounded-lg bg-warning/10">
                 <Lightbulb className="size-4 text-warning" />
               </div>
               <div>
-                <h3 className="text-sm font-semibold">Beacon Insights</h3>
+                <h3 className="text-sm font-semibold">Clarus Insights</h3>
                 <p className="text-[11px] text-muted-foreground">Automation intelligence</p>
               </div>
             </div>

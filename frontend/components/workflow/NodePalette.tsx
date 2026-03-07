@@ -1,6 +1,8 @@
 'use client';
 
 import { type DragEvent } from 'react';
+import Link from 'next/link';
+import { ArrowUpRight } from 'lucide-react';
 import { NODE_CATALOGUE, CATEGORY_STYLES, type CatalogueNode } from './types';
 
 interface PaletteItemProps {
@@ -31,20 +33,31 @@ function PaletteItem({ node, reactFlowType, styles }: PaletteItemProps) {
     >
       <div className="flex items-center gap-2">
         <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${styles.dot}`} />
-        <span className="text-xs font-semibold text-gray-200 truncate">{node.label}</span>
+        <span className="text-xs font-semibold text-foreground truncate">{node.label}</span>
       </div>
-      <p className="text-[10px] text-gray-500 mt-0.5 ml-3.5 font-mono truncate">{node.nodeType}</p>
+      <p className="text-[10px] text-muted-foreground mt-0.5 ml-3.5 font-mono truncate">{node.nodeType}</p>
     </div>
   );
 }
 
 export function NodePalette() {
   return (
-    <aside className="w-56 shrink-0 border-r border-gray-800 bg-gray-900 flex flex-col overflow-hidden">
+    <aside className="w-56 shrink-0 border-r border-border bg-card flex flex-col overflow-hidden">
+      {/* Dashboard button */}
+      <div className="px-3 pt-3 shrink-0">
+        <Link
+          href="/dashboard"
+          className="flex items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-80 w-full"
+        >
+          Dashboard
+          <ArrowUpRight className="h-3.5 w-3.5" />
+        </Link>
+      </div>
+
       {/* Header */}
-      <div className="px-4 py-3 border-b border-gray-800 shrink-0">
-        <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Node Palette</p>
-        <p className="text-[10px] text-gray-600 mt-0.5">Drag onto canvas to add</p>
+      <div className="px-4 py-3 border-b border-border shrink-0">
+        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Node Palette</p>
+        <p className="text-[10px] text-muted-foreground mt-0.5">Drag onto canvas to add</p>
       </div>
 
       {/* Scrollable node list */}
@@ -56,7 +69,7 @@ export function NodePalette() {
               {/* Category header */}
               <div className="flex items-center gap-1.5 mb-2">
                 <span className={`w-2 h-2 rounded-full ${styles.dot}`} />
-                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">
+                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
                   {category.category}
                 </p>
               </div>

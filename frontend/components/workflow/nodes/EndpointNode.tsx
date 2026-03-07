@@ -5,23 +5,21 @@ import { type WorkflowNodeData } from '../types';
 
 const NODE_TYPE_STYLES: Record<
   string,
-  { bg: string; border: string; selectedBorder: string; shadow: string; icon: string; accent: string }
+  { border: string; selectedBorder: string; shadow: string; icon: string; accent: string }
 > = {
   log_completion: {
-    bg: 'bg-emerald-950/70',
-    border: 'border-emerald-700/60',
-    selectedBorder: 'border-emerald-400',
-    shadow: 'shadow-emerald-500/25',
+    border: 'border-emerald-200',
+    selectedBorder: 'border-emerald-500',
+    shadow: 'shadow-emerald-100',
     icon: '✓',
-    accent: 'text-emerald-400',
+    accent: 'text-emerald-600',
   },
   send_summary_to_doctor: {
-    bg: 'bg-gray-800/70',
-    border: 'border-gray-600/60',
+    border: 'border-gray-200',
     selectedBorder: 'border-gray-400',
-    shadow: 'shadow-gray-500/25',
+    shadow: 'shadow-gray-100',
     icon: '↩',
-    accent: 'text-gray-400',
+    accent: 'text-gray-500',
   },
 };
 
@@ -35,11 +33,11 @@ export default function EndpointNode({ data, selected }: NodeProps) {
     <div
       className={`
         min-w-[176px] rounded-xl border-2 px-4 py-3
-        ${style.bg}
+        bg-card
         transition-all duration-150
         ${selected
-          ? `${style.selectedBorder} shadow-xl ${style.shadow}`
-          : `${style.border} hover:brightness-110`
+          ? `${style.selectedBorder} shadow-lg ${style.shadow}`
+          : `${style.border} hover:brightness-95`
         }
       `}
     >
@@ -57,7 +55,7 @@ export default function EndpointNode({ data, selected }: NodeProps) {
       </div>
 
       {/* Label */}
-      <p className="text-sm font-semibold text-white leading-tight">{d.label}</p>
+      <p className="text-sm font-semibold text-foreground leading-tight">{d.label}</p>
 
       {/* Node type */}
       <p className={`text-[11px] font-mono mt-1 truncate ${style.accent} opacity-50`}>{d.nodeType}</p>
