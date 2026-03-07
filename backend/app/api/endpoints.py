@@ -278,6 +278,115 @@ async def delete_workflow(workflow_id: str):
 
 
 # ---------------------------------------------------------------------------
+# Transcript-based fallback helpers
+# ---------------------------------------------------------------------------
+
+def _detect_confirmation_from_transcript(transcript: str) -> bool:
+    """
+    Scan the transcript for phrases indicating the patient agreed to an
+    appointment.  Only looks at patient/user lines (not the agent).
+    """
+    import re
+    text = transcript.lower()
+
+    # Positive confirmation phrases spoken by the patient
+    confirm_phrases = [
+        r"\byes\b.*\b(works?|good|great|perfect|fine|sure|sounds? good|that works)\b",
+        r"\b(sounds? good|sounds? great|that works|works for me|i can do that)\b",
+        r"\b(yes|yeah|yep|yup|sure|absolutely|definitely|of course)\b",
+        r"\b(i('?d| would) like to (schedule|book|confirm|make))\b",
+        r"\b(please (schedule|book|go ahead))\b",
+        r"\b(let'?s do it|go ahead|book it|confirm)\b",
+        r"\b(i('?m| am) available)\b",
+    ]
+
+    # Negative phrases — if these dominate, don't confirm
+    deny_phrases = [
+        r"\b(no|nope|not interested|can'?t make it|don'?t want)\b",
+        r"\b(i('?m| am) not available|cancel|decline)\b",
+    ]
+
+    confirm_count = sum(1 for p in confirm_phrases if re.search(p, text))
+    deny_count = sum(1 for p in deny_phrases if re.search(p, text))
+
+    return confirm_count > 0 and confirm_count > deny_count
+
+
+def _extract_datetime_from_transcript(transcript: str, existing_time: str) -> tuple[str, str]:
+    """
+    Try to extract a date and time from the transcript text.
+    Returns (date_str, time_str) — may be relative like "Thursday" or
+    "March 12" which _resolve_date() will convert later.
+    """
+    import re
+
+    text = transcript.lower()
+    found_date = ""
+    found_time = existing_time or ""
+
+    # Look for day names
+    day_pattern = r"\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b"
+    day_match = re.search(day_pattern, text)
+    if day_match:
+        found_date = day_match.group(1)
+
+    # Look for "tomorrow" / "today"
+    if re.search(r"\btomorrow\b", text):
+        found_date = "tomorrow"
+    elif re.search(r"\btoday\b", text) and not found_date:
+        found_date = "today"
+
+    # Look for "Month Day" like "March 12", "march 12th"
+    month_day = re.search(
+        r"\b(january|february|march|april|may|june|july|august|september|october|november|december)"
+        r"\s+(\d{1,2})(?:st|nd|rd|th)?\b",
+        text,
+    )
+    if month_day:
+        found_date = f"{month_day.group(1)} {month_day.group(2)}"
+
+    # Look for time patterns like "2:30", "2:30 PM", "14:30", "2 PM", "1:45 PM"
+    if not found_time:
+        time_match = re.search(r"\b(\d{1,2}):(\d{2})\s*(am|pm|a\.m\.|p\.m\.)?", text)
+        if time_match:
+            found_time = f"{time_match.group(1)}:{time_match.group(2)}"
+            if time_match.group(3):
+                found_time += f" {time_match.group(3).replace('.', '')}"
+        else:
+            # "2 PM", "3 am"
+            time_match2 = re.search(r"\b(\d{1,2})\s*(am|pm|a\.m\.|p\.m\.)\b", text)
+            if time_match2:
+                found_time = f"{time_match2.group(1)}:00 {time_match2.group(2).replace('.', '')}"
+
+    # ---- Word-based time parsing (e.g. "one forty-five", "three thirty") ----
+    if not found_time:
+        word_nums = {
+            "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+            "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+            "eleven": 11, "twelve": 12,
+        }
+        word_mins = {
+            "oh five": 5, "o five": 5, "ten": 10, "fifteen": 15,
+            "twenty": 20, "twenty-five": 25, "thirty": 30,
+            "thirty-five": 35, "forty": 40, "forty-five": 45,
+            "fifty": 50, "fifty-five": 55,
+        }
+        for hour_word, hour_val in word_nums.items():
+            for min_word, min_val in word_mins.items():
+                if f"{hour_word} {min_word}" in text:
+                    # Assume PM for typical appointment hours (1-6)
+                    display_hour = hour_val
+                    if display_hour <= 6:
+                        display_hour += 12
+                    found_time = f"{display_hour}:{min_val:02d}"
+                    break
+            if found_time:
+                break
+
+    return found_date, found_time
+
+
+# ---------------------------------------------------------------------------
 # Date/time helpers for ElevenLabs DCR values
 # ---------------------------------------------------------------------------
 
@@ -448,13 +557,19 @@ async def _auto_poll_call_result(log_id: str, max_attempts: int = 40, interval: 
             conv_status = conversation.get("status", "unknown")
             logger.info("Auto-poll attempt %d: conversation status = %s", attempt, conv_status)
 
+            # Dump full response keys for debugging
+            logger.info("Auto-poll: conversation top-level keys = %s", list(conversation.keys()))
+            analysis = conversation.get("analysis", {})
+            logger.info("Auto-poll: analysis keys = %s", list(analysis.keys()) if isinstance(analysis, dict) else type(analysis))
+            logger.info("Auto-poll: full analysis = %s", str(analysis)[:2000])
+
             if conv_status in ("in_progress", "processing", "initiated"):
                 await asyncio.sleep(interval)
                 continue
 
             # ---- Conversation is done — extract results ----
-            analysis = conversation.get("analysis", {})
             dcr = analysis.get("data_collection_results", {})
+            logger.info("Auto-poll: DCR raw = %s", str(dcr)[:1000])
 
             def _dcr_val(key: str) -> str:
                 entry = dcr.get(key, {})
@@ -468,18 +583,73 @@ async def _auto_poll_call_result(log_id: str, max_attempts: int = 40, interval: 
             confirmed_time = _dcr_val("confirmed_time")
             doctor_name = _dcr_val("doctor_name")
             availability_notes = _dcr_val("patient_availability_notes")
-            transcript = conversation.get("transcript", "")
+
+            # Transcript may be a string or a list of message dicts
+            raw_transcript = conversation.get("transcript", "")
+            if isinstance(raw_transcript, list):
+                transcript = "\n".join(
+                    f"{msg.get('role','')}: {msg.get('message','')}"
+                    for msg in raw_transcript
+                    if isinstance(msg, dict)
+                )
+            else:
+                transcript = raw_transcript or ""
 
             logger.info(
                 "Auto-poll DCR values — outcome=%s, confirmed=%s, date='%s', time='%s'",
                 call_outcome, patient_confirmed_raw, confirmed_date, confirmed_time,
             )
+            logger.info("Auto-poll transcript (first 500 chars): %s", transcript[:500])
+
+            # Also grab the AI-generated summary — most reliable source
+            transcript_summary = analysis.get("transcript_summary", "") or ""
+            call_successful = analysis.get("call_successful", "")
+            logger.info("Auto-poll: transcript_summary = %s", transcript_summary)
+            logger.info("Auto-poll: call_successful = %s", call_successful)
 
             patient_confirmed = patient_confirmed_raw.lower() in ("true", "yes", "1")
+
+            # ---- Fallback 1: check transcript_summary from ElevenLabs ----
+            if not patient_confirmed and transcript_summary:
+                summary_lower = transcript_summary.lower()
+                summary_confirm_phrases = [
+                    "confirmed", "chose", "selected", "booked",
+                    "scheduled", "agreed", "appointment for",
+                ]
+                if any(phrase in summary_lower for phrase in summary_confirm_phrases):
+                    patient_confirmed = True
+                    logger.info("Auto-poll: patient confirmation detected via transcript_summary")
+
+            # ---- Fallback 2: detect confirmation from raw transcript ----
+            if not patient_confirmed and transcript:
+                patient_confirmed = _detect_confirmation_from_transcript(transcript)
+                if patient_confirmed:
+                    logger.info("Auto-poll: patient confirmation detected via transcript fallback")
+
+            # ---- Extract date/time: try summary first, then raw transcript ----
+            if patient_confirmed and not confirmed_date:
+                # Try transcript_summary first (e.g., "Monday at 1:45 PM")
+                if transcript_summary:
+                    confirmed_date, confirmed_time = _extract_datetime_from_transcript(
+                        transcript_summary, confirmed_time
+                    )
+                    if confirmed_date:
+                        logger.info("Auto-poll: date from summary: %s %s", confirmed_date, confirmed_time)
+                # Fall back to raw transcript
+                if not confirmed_date and transcript:
+                    confirmed_date, confirmed_time = _extract_datetime_from_transcript(
+                        transcript, confirmed_time
+                    )
+                    if confirmed_date:
+                        logger.info("Auto-poll: date from transcript: %s %s", confirmed_date, confirmed_time)
 
             # Parse relative dates like "Thursday", "tomorrow", "March 12" into YYYY-MM-DD
             confirmed_date = _resolve_date(confirmed_date)
             confirmed_time = _resolve_time(confirmed_time)
+
+            # Default call_outcome if DCR didn't provide one
+            if not call_outcome:
+                call_outcome = "confirmed" if patient_confirmed else "completed"
 
             elevenlabs_data = {
                 "conversation_id": conversation_id,
@@ -727,6 +897,14 @@ async def lab_event(body: LabEventRequest):
 # ---------------------------------------------------------------------------
 # ElevenLabs post-call webhook
 # ---------------------------------------------------------------------------
+
+@router.get("/elevenlabs/debug/{conversation_id}")
+async def elevenlabs_debug(conversation_id: str):
+    """Debug endpoint: fetch raw ElevenLabs conversation data."""
+    from app.services.elevenlabs_service import get_conversation
+    conversation = await get_conversation(conversation_id)
+    return conversation
+
 
 @router.post("/elevenlabs/webhook")
 async def elevenlabs_webhook(request: Request):
