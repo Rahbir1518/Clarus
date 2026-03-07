@@ -2,7 +2,8 @@
 
 import '@xyflow/react/dist/style.css';
 
-import { useState, useCallback, type DragEvent } from 'react';
+import { useState, useCallback, useRef, type DragEvent } from 'react';
+import { useAuth0 } from '@auth0/auth0-react';
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -27,6 +28,7 @@ import ActionNode from './nodes/ActionNode';
 import ConditionalNode from './nodes/ConditionalNode';
 import EndpointNode from './nodes/EndpointNode';
 import { type CatalogueNode } from './types';
+import { createWorkflow, updateWorkflow } from '@/services/api';
 
 // ─── Register custom node types ─────────────────────────────────────────────
 
@@ -109,10 +111,18 @@ const EXAMPLE_EDGES: Edge[] = [
 
 function FlowContent() {
   const { screenToFlowPosition, fitView } = useReactFlow();
+  const { user } = useAuth0();
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+
+  // ── Save-to-DB state ────────────────────────────────────────────────────
+  const [savedWorkflowId, setSavedWorkflowId] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [showNameModal, setShowNameModal] = useState(false);
+  const [workflowName, setWorkflowName] = useState('');
+  const [workflowDescription, setWorkflowDescription] = useState('');
 
   // ── Connections ──────────────────────────────────────────────────────────
 
@@ -212,7 +222,7 @@ function FlowContent() {
     setTimeout(() => fitView({ padding: 0.15, duration: 400 }), 50);
   }, [setNodes, setEdges, fitView]);
 
-  const saveWorkflow = useCallback(() => {
+  const exportWorkflow = useCallback(() => {
     const workflow = { nodes, edges };
     const blob = new Blob([JSON.stringify(workflow, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -222,6 +232,52 @@ function FlowContent() {
     a.click();
     URL.revokeObjectURL(url);
   }, [nodes, edges]);
+
+  // ── Save to Supabase via backend API ──────────────────────────────────
+
+  const handleSaveClick = useCallback(() => {
+    if (savedWorkflowId) {
+      // Already saved once — just update
+      doSave(workflowName, workflowDescription);
+    } else {
+      // First save — prompt for name
+      setShowNameModal(true);
+    }
+  }, [savedWorkflowId, workflowName, workflowDescription]);
+
+  const doSave = useCallback(async (name: string, description: string) => {
+    setSaveStatus('saving');
+    setShowNameModal(false);
+    setWorkflowName(name);
+    setWorkflowDescription(description);
+
+    const doctorId = user?.sub ?? 'anonymous';
+
+    try {
+      if (savedWorkflowId) {
+        await updateWorkflow(savedWorkflowId, {
+          name,
+          description,
+          nodes: nodes as unknown[],
+          edges: edges as unknown[],
+        });
+      } else {
+        const result = await createWorkflow({
+          doctor_id: doctorId,
+          name,
+          description,
+          nodes: nodes as unknown[],
+          edges: edges as unknown[],
+        });
+        setSavedWorkflowId(result.id);
+      }
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus('idle'), 2500);
+    } catch {
+      setSaveStatus('error');
+      setTimeout(() => setSaveStatus('idle'), 3000);
+    }
+  }, [savedWorkflowId, nodes, edges, user]);
 
   // ────────────────────────────────────────────────────────────────────────
 
@@ -263,11 +319,32 @@ function FlowContent() {
             Clear
           </button>
           <button
-            onClick={saveWorkflow}
+            onClick={exportWorkflow}
             disabled={nodes.length === 0}
-            className="px-3 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            className="px-3 py-1 text-xs rounded border border-gray-700 text-gray-400 hover:bg-gray-800 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
           >
             Export JSON
+          </button>
+          <button
+            onClick={handleSaveClick}
+            disabled={nodes.length === 0 || saveStatus === 'saving'}
+            className={`px-3 py-1 text-xs rounded text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
+              saveStatus === 'saved'
+                ? 'bg-emerald-600'
+                : saveStatus === 'error'
+                  ? 'bg-red-600'
+                  : 'bg-indigo-600 hover:bg-indigo-500'
+            }`}
+          >
+            {saveStatus === 'saving'
+              ? 'Saving…'
+              : saveStatus === 'saved'
+                ? '✓ Saved'
+                : saveStatus === 'error'
+                  ? '✕ Error'
+                  : savedWorkflowId
+                    ? 'Update Workflow'
+                    : 'Save Workflow'}
           </button>
           <button className="px-3 py-1 text-xs rounded bg-emerald-700 hover:bg-emerald-600 text-white transition-colors">
             ▶&nbsp;Run
@@ -349,6 +426,47 @@ function FlowContent() {
           onDeleteNode={deleteNode}
         />
       </div>
+
+      {/* ── Save workflow name modal ───────────────────────────────────── */}
+      {showNameModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-gray-900 border border-gray-700 rounded-xl p-6 w-full max-w-md shadow-2xl">
+            <h2 className="text-lg font-semibold text-white mb-4">Save Workflow</h2>
+            <label className="block text-sm text-gray-400 mb-1">Name *</label>
+            <input
+              autoFocus
+              type="text"
+              value={workflowName}
+              onChange={(e) => setWorkflowName(e.target.value)}
+              placeholder="e.g. Lab Results Follow-Up"
+              className="w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-3"
+            />
+            <label className="block text-sm text-gray-400 mb-1">Description</label>
+            <textarea
+              value={workflowDescription}
+              onChange={(e) => setWorkflowDescription(e.target.value)}
+              placeholder="Optional description…"
+              rows={2}
+              className="w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-4 resize-none"
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowNameModal(false)}
+                className="px-4 py-2 text-xs rounded-lg border border-gray-700 text-gray-400 hover:bg-gray-800 hover:text-white transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={!workflowName.trim()}
+                onClick={() => doSave(workflowName.trim(), workflowDescription.trim())}
+                className="px-4 py-2 text-xs rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
