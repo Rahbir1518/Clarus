@@ -1,27 +1,12 @@
 """
 FastAPI route endpoints for MedTrigger.
-
-Routes
-------
-GET    /api/workflows                   List workflows
-POST   /api/workflows                   Create workflow
-GET    /api/workflows/{id}              Get single workflow
-PUT    /api/workflows/{id}              Update workflow
-DELETE /api/workflows/{id}              Delete workflow
-POST   /api/workflows/{id}/execute      Execute workflow for a patient
-POST   /api/lab-event                   Simulate lab event → auto-execute matching workflows
-POST   /api/elevenlabs/webhook          ElevenLabs post-call webhook
-POST   /api/twilio/voice                TwiML webhook (Say + Gather)
-POST   /api/twilio/gather               Handle keypress response
-GET    /api/call-logs                   List execution logs
-POST   /api/call-logs/{id}/check        Poll ElevenLabs for call result (local dev alternative to webhook)
 """
 from __future__ import annotations
 
 import logging
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, HTTPException, Request, Response, UploadFile, File, Form
 from pydantic import BaseModel, Field
 
 import app.services.supabase_service as db
@@ -314,7 +299,6 @@ async def execute_workflow_endpoint(workflow_id: str, body: ExecuteRequest):
     })
     log_id = log_row["id"]
 
-    # Run the engine (async)
     execution_log = await execute_workflow(
         workflow=wf,
         patient=patient,
@@ -382,6 +366,8 @@ async def lab_event(body: LabEventRequest):
             trigger_node_type=body.trigger_type,
             call_log_id=log_id,
             doctor_id=wf.get("doctor_id") or body.doctor_id,
+            metadata=body.metadata,
+            lab_results=body.metadata.get("lab_results", []),
         )
 
         has_error = any(s.get("status") == "error" for s in execution_log)
@@ -838,3 +824,443 @@ async def check_call_status(log_id: str):
         "calendar_event_id": calendar_event.get("id") if calendar_event else None,
         "call_log_id": log_id,
     }
+
+
+# ---------------------------------------------------------------------------
+# PDF upload & extraction
+# ---------------------------------------------------------------------------
+
+@router.post("/pdf/upload")
+async def upload_pdf(
+    file: UploadFile = File(...),
+    patient_id: str = Form(None),
+    uploaded_by: str = Form(None),
+):
+    """
+    Upload a medical PDF, extract structured data (patient info, lab results,
+    tables), and optionally link it to a patient.
+    """
+    from app.services.pdf_service import parse_pdf_document
+
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are accepted")
+
+    contents = await file.read()
+    if len(contents) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="PDF must be under 20 MB")
+
+    try:
+        parsed = parse_pdf_document(contents)
+    except Exception as exc:
+        logger.exception("PDF parsing failed")
+        raise HTTPException(status_code=422, detail=f"Failed to parse PDF: {exc}")
+
+    doc_payload = {
+        "filename": file.filename,
+        "page_count": parsed.get("page_count"),
+        "raw_text": parsed.get("raw_text", "")[:50000],
+        "patient_info": parsed.get("patient_info", {}),
+        "lab_results": parsed.get("lab_results", []),
+        "tables_data": parsed.get("tables", []),
+    }
+    if patient_id:
+        doc_payload["patient_id"] = patient_id
+    if uploaded_by:
+        doc_payload["uploaded_by"] = uploaded_by
+
+    try:
+        record = db.create_pdf_document(doc_payload)
+    except Exception as exc:
+        logger.exception("Failed to save PDF document")
+        raise HTTPException(status_code=500, detail=f"DB error: {exc}")
+
+    return {
+        "id": record.get("id"),
+        "filename": file.filename,
+        "page_count": parsed.get("page_count"),
+        "patient_info": parsed.get("patient_info", {}),
+        "lab_results": parsed.get("lab_results", []),
+        "extracted_at": parsed.get("extracted_at"),
+    }
+
+
+@router.post("/pdf/intake")
+async def pdf_intake(
+    file: UploadFile = File(...),
+    doctor_id: str = Form(...),
+):
+    """
+    Upload a medical PDF to create a new patient profile.
+    Extracts patient demographics, medications, and lab results from the PDF
+    and creates the patient record + medication records automatically.
+    """
+    from app.services.pdf_service import parse_pdf_document
+
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are accepted")
+
+    contents = await file.read()
+    if len(contents) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="PDF must be under 20 MB")
+
+    try:
+        parsed = parse_pdf_document(contents)
+    except Exception as exc:
+        logger.exception("PDF parsing failed")
+        raise HTTPException(status_code=422, detail=f"Failed to parse PDF: {exc}")
+
+    patient_info = parsed.get("patient_info", {})
+    medications = parsed.get("medications", [])
+    lab_results = parsed.get("lab_results", [])
+
+    patient_name = patient_info.get("name", "").strip()
+    if not patient_name:
+        patient_name = f"Patient from {file.filename}"
+
+    dob_raw = patient_info.get("dob", "")
+    dob_iso = None
+    if dob_raw:
+        for fmt in ("%m/%d/%Y", "%m-%d-%Y", "%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d",
+                     "%m/%d/%y", "%m-%d-%y", "%d/%m/%y", "%d-%m-%y"):
+            try:
+                from datetime import datetime as _dt
+                dob_iso = _dt.strptime(dob_raw, fmt).date().isoformat()
+                break
+            except ValueError:
+                continue
+
+    patient_payload: dict[str, Any] = {
+        "name": patient_name,
+        "phone": patient_info.get("phone", ""),
+        "doctor_id": doctor_id,
+    }
+    if dob_iso:
+        patient_payload["dob"] = dob_iso
+    if patient_info.get("mrn"):
+        patient_payload["mrn"] = patient_info["mrn"]
+    if patient_info.get("insurance"):
+        patient_payload["insurance"] = patient_info["insurance"]
+
+    sb = db.get_supabase()
+    try:
+        patient_row = sb.table("patients").insert(patient_payload).execute().data[0]
+    except Exception as exc:
+        logger.exception("Failed to create patient from PDF")
+        raise HTTPException(status_code=500, detail=f"Failed to create patient: {exc}")
+
+    patient_id = patient_row["id"]
+
+    created_medications: list[dict] = []
+    for med in medications:
+        try:
+            med_payload: dict[str, Any] = {
+                "patient_id": patient_id,
+                "name": med.get("name", ""),
+                "status": med.get("status", "active"),
+            }
+            if med.get("dosage"):
+                med_payload["dosage"] = med["dosage"]
+            row = db.create_medication(med_payload)
+            created_medications.append(row)
+        except Exception as exc:
+            logger.warning("Failed to create medication %s: %s", med.get("name"), exc)
+
+    try:
+        db.create_pdf_document({
+            "patient_id": patient_id,
+            "filename": file.filename,
+            "page_count": parsed.get("page_count"),
+            "raw_text": parsed.get("raw_text", "")[:50000],
+            "patient_info": patient_info,
+            "lab_results": lab_results,
+            "tables_data": parsed.get("tables", []),
+            "uploaded_by": doctor_id,
+        })
+    except Exception:
+        pass
+
+    return {
+        "patient": patient_row,
+        "extracted": {
+            "patient_info": patient_info,
+            "medications": medications,
+            "lab_results": lab_results,
+            "page_count": parsed.get("page_count"),
+        },
+        "created_medications": len(created_medications),
+    }
+
+
+@router.post("/patients/{patient_id}/import-pdf")
+async def import_pdf_to_patient(patient_id: str, file: UploadFile = File(...)):
+    """
+    Upload a medical PDF for an existing patient.
+    Parses the PDF and updates the patient record with any extracted fields
+    that are currently empty (does not overwrite existing data).
+    Also creates medication records for any medications found in the PDF.
+    """
+    from app.services.pdf_service import parse_pdf_document
+
+    patient = db.get_patient(patient_id)
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are accepted")
+
+    contents = await file.read()
+    if len(contents) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="PDF must be under 20 MB")
+
+    try:
+        parsed = parse_pdf_document(contents)
+    except Exception as exc:
+        logger.exception("PDF parsing failed")
+        raise HTTPException(status_code=422, detail=f"Failed to parse PDF: {exc}")
+
+    patient_info = parsed.get("patient_info", {})
+    medications = parsed.get("medications", [])
+    lab_results = parsed.get("lab_results", [])
+
+    # --- Update patient fields that are currently empty ---
+    dob_raw = patient_info.get("dob", "")
+    dob_iso = None
+    if dob_raw:
+        for fmt in ("%m/%d/%Y", "%m-%d-%Y", "%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d",
+                     "%m/%d/%y", "%m-%d-%y", "%d/%m/%y", "%d-%m-%y"):
+            try:
+                from datetime import datetime as _dt
+                dob_iso = _dt.strptime(dob_raw, fmt).date().isoformat()
+                break
+            except ValueError:
+                continue
+
+    FIELD_MAP = {
+        "name": patient_info.get("name", "").strip(),
+        "phone": patient_info.get("phone", "").strip(),
+        "dob": dob_iso,
+        "mrn": patient_info.get("mrn", "").strip(),
+        "insurance": patient_info.get("insurance", "").strip(),
+    }
+
+    update_payload: dict[str, Any] = {}
+    updated_fields: list[str] = []
+    for field, extracted_value in FIELD_MAP.items():
+        if extracted_value and not patient.get(field):
+            update_payload[field] = extracted_value
+            updated_fields.append(field)
+
+    updated_patient = patient
+    if update_payload:
+        try:
+            updated_patient = db.update_patient(patient_id, update_payload)
+        except Exception as exc:
+            logger.warning("Failed to update patient from PDF: %s", exc)
+
+    # --- Add medications (skip duplicates) ---
+    existing_meds = db.list_medications(patient_id)
+    existing_med_names = {
+        (m.get("name") or "").lower() for m in existing_meds
+    }
+
+    added_medications: list[dict] = []
+    for med in medications:
+        med_name = med.get("name", "").strip()
+        if not med_name or med_name.lower() in existing_med_names:
+            continue
+        try:
+            med_payload: dict[str, Any] = {
+                "patient_id": patient_id,
+                "name": med_name,
+                "status": med.get("status", "active"),
+            }
+            if med.get("dosage"):
+                med_payload["dosage"] = med["dosage"]
+            row = db.create_medication(med_payload)
+            added_medications.append(row)
+            existing_med_names.add(med_name.lower())
+        except Exception as exc:
+            logger.warning("Failed to create medication %s: %s", med_name, exc)
+
+    # --- Store PDF document record ---
+    try:
+        db.create_pdf_document({
+            "patient_id": patient_id,
+            "filename": file.filename,
+            "page_count": parsed.get("page_count"),
+            "raw_text": parsed.get("raw_text", "")[:50000],
+            "patient_info": patient_info,
+            "lab_results": lab_results,
+            "tables_data": parsed.get("tables", []),
+        })
+    except Exception:
+        pass
+
+    return {
+        "patient": updated_patient,
+        "updated_fields": updated_fields,
+        "extracted": {
+            "patient_info": patient_info,
+            "medications": medications,
+            "lab_results": lab_results,
+            "page_count": parsed.get("page_count"),
+        },
+        "added_medications": len(added_medications),
+        "skipped_medications": len(medications) - len(added_medications),
+    }
+
+
+@router.get("/pdf/documents")
+async def list_pdf_documents(patient_id: str | None = None):
+    return db.list_pdf_documents(patient_id=patient_id)
+
+
+@router.get("/pdf/documents/{doc_id}")
+async def get_pdf_document(doc_id: str):
+    doc = db.get_pdf_document(doc_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="PDF document not found")
+    return doc
+
+
+@router.delete("/pdf/documents/{doc_id}", status_code=204)
+async def delete_pdf_document(doc_id: str):
+    db.delete_pdf_document(doc_id)
+
+
+@router.post("/pdf/extract-and-execute")
+async def extract_pdf_and_execute(
+    file: UploadFile = File(...),
+    patient_id: str = Form(...),
+    workflow_id: str = Form(...),
+):
+    """
+    Upload a PDF (e.g. lab report), extract data, then execute a workflow
+    with the extracted lab results injected into the execution context.
+    """
+    from app.services.pdf_service import parse_pdf_document
+
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are accepted")
+
+    contents = await file.read()
+
+    try:
+        parsed = parse_pdf_document(contents)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"Failed to parse PDF: {exc}")
+
+    wf = db.get_workflow(workflow_id)
+    if not wf:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    patient = db.get_patient(patient_id)
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    doc_record = db.create_pdf_document({
+        "patient_id": patient_id,
+        "filename": file.filename,
+        "page_count": parsed.get("page_count"),
+        "raw_text": parsed.get("raw_text", "")[:50000],
+        "patient_info": parsed.get("patient_info", {}),
+        "lab_results": parsed.get("lab_results", []),
+        "tables_data": parsed.get("tables", []),
+    })
+
+    log_row = db.create_call_log({
+        "workflow_id": workflow_id,
+        "patient_id": patient_id,
+        "trigger_node": "pdf_upload",
+        "status": "running",
+    })
+    log_id = log_row["id"]
+
+    execution_log = await execute_workflow(
+        workflow=wf,
+        patient=patient,
+        call_log_id=log_id,
+        doctor_id=wf.get("doctor_id"),
+        lab_results=parsed.get("lab_results", []),
+        metadata={
+            "pdf_document_id": doc_record.get("id"),
+            "patient_info": parsed.get("patient_info", {}),
+            "lab_results": parsed.get("lab_results", []),
+        },
+    )
+
+    has_error = any(s.get("status") == "error" for s in execution_log)
+    final_status = "failed" if has_error else "completed"
+
+    db.update_call_log(log_id, {
+        "status": final_status,
+        "execution_log": execution_log,
+    })
+
+    return {
+        "call_log_id": log_id,
+        "pdf_document_id": doc_record.get("id"),
+        "status": final_status,
+        "lab_results_found": len(parsed.get("lab_results", [])),
+        "patient_info_extracted": parsed.get("patient_info", {}),
+        "execution_log": execution_log,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Notifications CRUD
+# ---------------------------------------------------------------------------
+
+@router.get("/notifications")
+async def list_notifications(patient_id: str | None = None):
+    return db.list_notifications(patient_id=patient_id)
+
+
+# ---------------------------------------------------------------------------
+# Lab orders CRUD
+# ---------------------------------------------------------------------------
+
+@router.get("/lab-orders")
+async def list_lab_orders(patient_id: str | None = None):
+    return db.list_lab_orders(patient_id=patient_id)
+
+
+# ---------------------------------------------------------------------------
+# Referrals CRUD
+# ---------------------------------------------------------------------------
+
+@router.get("/referrals")
+async def list_referrals(patient_id: str | None = None):
+    return db.list_referrals(patient_id=patient_id)
+
+
+# ---------------------------------------------------------------------------
+# Staff assignments CRUD
+# ---------------------------------------------------------------------------
+
+@router.get("/staff-assignments")
+async def list_staff_assignments(
+    patient_id: str | None = None,
+    staff_id: str | None = None,
+):
+    return db.list_staff_assignments(patient_id=patient_id, staff_id=staff_id)
+
+
+# ---------------------------------------------------------------------------
+# Reports CRUD
+# ---------------------------------------------------------------------------
+
+@router.get("/reports")
+async def list_reports(
+    patient_id: str | None = None,
+    workflow_id: str | None = None,
+):
+    return db.list_reports(patient_id=patient_id, workflow_id=workflow_id)
+
+
+@router.get("/reports/{report_id}")
+async def get_report(report_id: str):
+    report = db.get_report(report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    return report

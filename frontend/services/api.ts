@@ -305,3 +305,166 @@ export async function deleteMedication(patientId: string, medicationId: string) 
   });
   return response;
 }
+
+// ---------------------------------------------------------------------------
+// PDF upload & extraction
+// ---------------------------------------------------------------------------
+
+export async function uploadPdf(
+  file: File,
+  patientId?: string,
+  uploadedBy?: string,
+) {
+  const formData = new FormData();
+  formData.append('file', file);
+  if (patientId) formData.append('patient_id', patientId);
+  if (uploadedBy) formData.append('uploaded_by', uploadedBy);
+
+  const response = await fetch(`${API_URL}/api/pdf/upload`, {
+    method: 'POST',
+    body: formData,
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => response.statusText);
+    throw new Error(`PDF upload failed (${response.status}): ${detail}`);
+  }
+  return response.json();
+}
+
+export async function pdfIntake(file: File, doctorId: string) {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('doctor_id', doctorId);
+
+  const response = await fetch(`${API_URL}/api/pdf/intake`, {
+    method: 'POST',
+    body: formData,
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => response.statusText);
+    throw new Error(`PDF intake failed (${response.status}): ${detail}`);
+  }
+  return response.json();
+}
+
+export async function importPdfToPatient(file: File, patientId: string) {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await fetch(`${API_URL}/api/patients/${patientId}/import-pdf`, {
+    method: 'POST',
+    body: formData,
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => response.statusText);
+    throw new Error(`PDF import failed (${response.status}): ${detail}`);
+  }
+  return response.json();
+}
+
+export async function extractPdfAndExecute(
+  file: File,
+  patientId: string,
+  workflowId: string,
+) {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('patient_id', patientId);
+  formData.append('workflow_id', workflowId);
+
+  const response = await fetch(`${API_URL}/api/pdf/extract-and-execute`, {
+    method: 'POST',
+    body: formData,
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => response.statusText);
+    throw new Error(`PDF extract & execute failed (${response.status}): ${detail}`);
+  }
+  return response.json();
+}
+
+export async function listPdfDocuments(patientId?: string) {
+  const params = new URLSearchParams();
+  if (patientId) params.set('patient_id', patientId);
+  const qs = params.toString();
+  const response = await fetch(`${API_URL}/api/pdf/documents${qs ? `?${qs}` : ''}`);
+  return response.json();
+}
+
+export async function getPdfDocument(docId: string) {
+  const response = await fetch(`${API_URL}/api/pdf/documents/${docId}`);
+  if (!response.ok) throw new Error(`Failed to fetch PDF document (${response.status})`);
+  return response.json();
+}
+
+export async function deletePdfDocument(docId: string) {
+  return fetch(`${API_URL}/api/pdf/documents/${docId}`, { method: 'DELETE' });
+}
+
+// ---------------------------------------------------------------------------
+// Notifications
+// ---------------------------------------------------------------------------
+
+export async function listNotifications(patientId?: string) {
+  const params = new URLSearchParams();
+  if (patientId) params.set('patient_id', patientId);
+  const qs = params.toString();
+  const response = await fetch(`${API_URL}/api/notifications${qs ? `?${qs}` : ''}`);
+  return response.json();
+}
+
+// ---------------------------------------------------------------------------
+// Lab orders
+// ---------------------------------------------------------------------------
+
+export async function listLabOrders(patientId?: string) {
+  const params = new URLSearchParams();
+  if (patientId) params.set('patient_id', patientId);
+  const qs = params.toString();
+  const response = await fetch(`${API_URL}/api/lab-orders${qs ? `?${qs}` : ''}`);
+  return response.json();
+}
+
+// ---------------------------------------------------------------------------
+// Referrals
+// ---------------------------------------------------------------------------
+
+export async function listReferrals(patientId?: string) {
+  const params = new URLSearchParams();
+  if (patientId) params.set('patient_id', patientId);
+  const qs = params.toString();
+  const response = await fetch(`${API_URL}/api/referrals${qs ? `?${qs}` : ''}`);
+  return response.json();
+}
+
+// ---------------------------------------------------------------------------
+// Staff assignments
+// ---------------------------------------------------------------------------
+
+export async function listStaffAssignments(patientId?: string, staffId?: string) {
+  const params = new URLSearchParams();
+  if (patientId) params.set('patient_id', patientId);
+  if (staffId) params.set('staff_id', staffId);
+  const qs = params.toString();
+  const response = await fetch(`${API_URL}/api/staff-assignments${qs ? `?${qs}` : ''}`);
+  return response.json();
+}
+
+// ---------------------------------------------------------------------------
+// Reports
+// ---------------------------------------------------------------------------
+
+export async function listReports(patientId?: string, workflowId?: string) {
+  const params = new URLSearchParams();
+  if (patientId) params.set('patient_id', patientId);
+  if (workflowId) params.set('workflow_id', workflowId);
+  const qs = params.toString();
+  const response = await fetch(`${API_URL}/api/reports${qs ? `?${qs}` : ''}`);
+  return response.json();
+}
+
+export async function getReport(reportId: string) {
+  const response = await fetch(`${API_URL}/api/reports/${reportId}`);
+  if (!response.ok) throw new Error(`Failed to fetch report (${response.status})`);
+  return response.json();
+}

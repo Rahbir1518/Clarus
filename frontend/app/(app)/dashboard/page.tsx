@@ -8,9 +8,11 @@ import {
   listWorkflows,
   listCallLogs,
   listConditions,
+  pdfIntake,
 } from "@/services/api";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -36,6 +38,8 @@ import {
   Hash,
   ClipboardCheck,
   AlertCircle,
+  Upload,
+  Loader2,
 } from "lucide-react";
 
 export default function DashboardPage() {
@@ -53,7 +57,9 @@ export default function DashboardPage() {
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
   const [selectedConditions, setSelectedConditions] = useState<any[]>([]);
   const [loadingConditions, setLoadingConditions] = useState(false);
+  const [uploadingPdf, setUploadingPdf] = useState(false);
 
+  const router = useRouter();
   const { user } = useAuth0();
   const doctorId = user?.sub;
 
@@ -129,6 +135,25 @@ export default function DashboardPage() {
     }
   }, [selectedPatientId]);
 
+  const handlePdfIntake = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !doctorId) return;
+    setUploadingPdf(true);
+    try {
+      const result = await pdfIntake(file, doctorId);
+      if (result.patient?.id) {
+        sessionStorage.setItem("pdfImportResult", JSON.stringify(result));
+        router.push(`/patients/${result.patient.id}`);
+      }
+      fetchPatients();
+    } catch (err: any) {
+      alert(err.message || "PDF import failed");
+    } finally {
+      setUploadingPdf(false);
+      e.target.value = "";
+    }
+  }, [doctorId, fetchPatients, router]);
+
   const today = new Date().toDateString();
   const callsToday = callLogs.filter(
     (cl) => new Date(cl.created_at).toDateString() === today
@@ -186,6 +211,16 @@ export default function DashboardPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <label className="cursor-pointer">
+            <input type="file" accept=".pdf" className="hidden" onChange={handlePdfIntake} disabled={uploadingPdf} />
+            <span className={cn(
+              "inline-flex items-center gap-2 rounded-lg border border-border bg-background px-4 py-2 text-sm font-medium transition-colors",
+              uploadingPdf ? "opacity-60 cursor-wait" : "hover:bg-muted"
+            )}>
+              {uploadingPdf ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
+              {uploadingPdf ? "Processing…" : "Import from PDF"}
+            </span>
+          </label>
           <Button variant="outline" onClick={() => setShowAddPatient(true)}>
             <UserPlus className="size-4" />
             Add Patient
