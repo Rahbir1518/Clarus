@@ -219,7 +219,7 @@ export default function PatientDetailPage({
       if (editingMedicationId) {
         await updateMedication(patientId, editingMedicationId, payload);
       } else {
-        await createMedication(patientId, payload);
+        await createMedication(patientId, payload as any);
       }
 
       setMedicationForm({ name: "", dosage: "", frequency: "", route: "", prescriber: "", start_date: "", end_date: "", status: "active", notes: "" });

@@ -574,8 +574,14 @@ async def _auto_poll_call_result(log_id: str, max_attempts: int = 40, interval: 
             def _dcr_val(key: str) -> str:
                 entry = dcr.get(key, {})
                 if isinstance(entry, dict):
-                    return str(entry.get("value", ""))
-                return str(entry)
+                    val = entry.get("value", "")
+                else:
+                    val = entry
+                # Ensure we never return the string "None"
+                if val is None:
+                    return ""
+                result = str(val).strip()
+                return "" if result.lower() == "none" else result
 
             call_outcome = _dcr_val("call_outcome")
             patient_confirmed_raw = _dcr_val("patient_confirmed")
@@ -678,7 +684,7 @@ async def _auto_poll_call_result(log_id: str, max_attempts: int = 40, interval: 
             })
 
             # ---- If patient confirmed → create Google Calendar event ----
-            if patient_confirmed and confirmed_date:
+            if patient_confirmed and confirmed_date and confirmed_date.lower() != "none":
                 doctor_id = _get_doctor_id_from_workflow(call_log.get("workflow_id"))
                 if not doctor_id:
                     logger.warning("Auto-poll: No doctor_id found — cannot create calendar event")
