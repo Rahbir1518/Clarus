@@ -80,7 +80,10 @@ def _build_adjacency(edges: list[dict]) -> dict[str, list[str]]:
 def _find_trigger_node(nodes: list[dict]) -> dict | None:
     """Return the first node whose type is a trigger type."""
     for node in nodes:
-        node_type = node.get("type") or node.get("data", {}).get("nodeType", "")
+        # data.nodeType holds the engine dispatch key; node["type"] is the
+        # React Flow rendering type ("trigger", "action", …) and must NOT
+        # take precedence.
+        node_type = node.get("data", {}).get("nodeType", "") or node.get("type", "")
         if node_type in TRIGGER_TYPES:
             return node
     return None
@@ -217,7 +220,7 @@ _ACTION_HANDLERS: dict[str, Any] = {
 
 
 def _dispatch(node: dict, context: dict) -> tuple[bool, dict]:
-    node_type = (node.get("type") or node.get("data", {}).get("nodeType", "")).lower()
+    node_type = (node.get("data", {}).get("nodeType", "") or node.get("type", "")).lower()
 
     if node_type in TRIGGER_TYPES:
         return _handle_trigger(node, context)
@@ -290,7 +293,7 @@ def execute_workflow(
         ok, step = _dispatch(node, context)
         execution_log.append(step)
 
-        node_type = (node.get("type") or node.get("data", {}).get("nodeType", "")).lower()
+        node_type = (node.get("data", {}).get("nodeType", "") or node.get("type", "")).lower()
         # If a condition failed, stop the pipeline
         if node_type in CONDITION_TYPES and not ok:
             active = False

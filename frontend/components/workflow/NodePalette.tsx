@@ -5,15 +5,15 @@ import { NODE_CATALOGUE, CATEGORY_STYLES, type CatalogueNode } from './types';
 
 interface PaletteItemProps {
   node: CatalogueNode;
-  nodeType: string;
+  reactFlowType: string;
   styles: (typeof CATEGORY_STYLES)[keyof typeof CATEGORY_STYLES];
 }
 
-function PaletteItem({ node, nodeType, styles }: PaletteItemProps) {
+function PaletteItem({ node, reactFlowType, styles }: PaletteItemProps) {
   const onDragStart = (event: DragEvent<HTMLDivElement>) => {
     event.dataTransfer.setData(
       'application/reactflow',
-      JSON.stringify({ ...node, nodeType })
+      JSON.stringify({ ...node, reactFlowType })
     );
     event.dataTransfer.effectAllowed = 'move';
   };
@@ -33,7 +33,7 @@ function PaletteItem({ node, nodeType, styles }: PaletteItemProps) {
         <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${styles.dot}`} />
         <span className="text-xs font-semibold text-gray-200 truncate">{node.label}</span>
       </div>
-      <p className="text-[10px] text-gray-500 mt-0.5 ml-3.5 font-mono truncate">{node.method}()</p>
+      <p className="text-[10px] text-gray-500 mt-0.5 ml-3.5 font-mono truncate">{node.nodeType}</p>
     </div>
   );
 }
@@ -65,9 +65,9 @@ export function NodePalette() {
               <div className="space-y-1.5">
                 {category.nodes.map((node) => (
                   <PaletteItem
-                    key={node.subtype}
+                    key={node.nodeType}
                     node={node}
-                    nodeType={category.nodeType}
+                    reactFlowType={category.reactFlowType}
                     styles={styles}
                   />
                 ))}

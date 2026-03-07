@@ -56,53 +56,53 @@ const EXAMPLE_NODES: Node[] = [
     id: 'ex_1',
     type: 'trigger',
     position: { x: 280, y: 40 },
-    data: { label: 'Lab Event', method: 'handle_lab_event', description: 'Lab result received', subtype: 'lab_event', params: { patient_id: '', report_type: '' } },
+    data: { label: 'Lab Results Received', nodeType: 'lab_results_received', description: 'Lab result arrives for patient', params: {} },
   },
   {
     id: 'ex_2',
-    type: 'action',
-    position: { x: 280, y: 160 },
-    data: { label: 'Get Patient', method: 'get_patient_by_id', description: 'Fetch patient from Supabase', subtype: 'get_patient', params: { patient_id: '{{trigger.patient_id}}' } },
+    type: 'conditional',
+    position: { x: 280, y: 180 },
+    data: { label: 'Check Result Values', nodeType: 'check_result_values', description: 'Are results abnormal?', params: { result: '' } },
   },
   {
     id: 'ex_3',
     type: 'action',
-    position: { x: 280, y: 300 },
-    data: { label: 'Initiate Call', method: 'initiate_outbound_call', description: 'Start ElevenLabs call', subtype: 'initiate_call', params: { phone_number: '{{patient.phone_number}}', system_prompt: '' } },
+    position: { x: 100, y: 340 },
+    data: { label: 'Call Patient', nodeType: 'call_patient', description: 'Place outbound Twilio call', params: { message: '' } },
   },
   {
     id: 'ex_4',
-    type: 'conditional',
-    position: { x: 280, y: 450 },
-    data: { label: 'Patient Confirmed?', method: 'check_patient_confirmed', description: 'Did the patient book?', subtype: 'patient_confirmed', params: {} },
+    type: 'action',
+    position: { x: 100, y: 490 },
+    data: { label: 'Schedule Appointment', nodeType: 'schedule_appointment', description: 'Schedule follow-up', params: {} },
   },
   {
     id: 'ex_5',
-    type: 'action',
-    position: { x: 100, y: 620 },
-    data: { label: 'Create Calendar Event', method: 'create_calendar_event', description: 'Add to Google Calendar', subtype: 'create_calendar_event', params: { patient_name: '', doctor_name: '', date: '', time: '' } },
+    type: 'endpoint',
+    position: { x: 100, y: 640 },
+    data: { label: 'Send Summary to Doctor', nodeType: 'send_summary_to_doctor', description: 'Notify the doctor', params: {} },
   },
   {
     id: 'ex_6',
-    type: 'endpoint',
-    position: { x: 100, y: 760 },
-    data: { label: 'Success', method: 'return_success', description: 'Workflow complete', subtype: 'success', params: { message: 'Appointment scheduled' } },
+    type: 'action',
+    position: { x: 460, y: 340 },
+    data: { label: 'Send SMS', nodeType: 'send_sms', description: 'SMS with normal results', params: { message: 'Your results are normal.' } },
   },
   {
     id: 'ex_7',
     type: 'endpoint',
-    position: { x: 460, y: 620 },
-    data: { label: 'Log Error', method: 'log_error', description: 'Patient did not confirm', subtype: 'log_error', params: { message: 'Patient declined or unavailable', level: 'warning' } },
+    position: { x: 460, y: 490 },
+    data: { label: 'Log Completion', nodeType: 'log_completion', description: 'Workflow complete', params: {} },
   },
 ];
 
 const EXAMPLE_EDGES: Edge[] = [
   { id: 'ee_1', source: 'ex_1', target: 'ex_2', animated: true, style: { stroke: '#6366f1', strokeWidth: 2 } },
-  { id: 'ee_2', source: 'ex_2', target: 'ex_3', animated: true, style: { stroke: '#6366f1', strokeWidth: 2 } },
-  { id: 'ee_3', source: 'ex_3', target: 'ex_4', animated: true, style: { stroke: '#6366f1', strokeWidth: 2 } },
-  { id: 'ee_4', source: 'ex_4', sourceHandle: 'true', target: 'ex_5', animated: true, style: { stroke: '#10b981', strokeWidth: 2 } },
-  { id: 'ee_5', source: 'ex_4', sourceHandle: 'false', target: 'ex_7', animated: true, style: { stroke: '#ef4444', strokeWidth: 2 } },
-  { id: 'ee_6', source: 'ex_5', target: 'ex_6', animated: true, style: { stroke: '#6366f1', strokeWidth: 2 } },
+  { id: 'ee_2', source: 'ex_2', sourceHandle: 'true', target: 'ex_3', animated: true, style: { stroke: '#10b981', strokeWidth: 2 } },
+  { id: 'ee_3', source: 'ex_2', sourceHandle: 'false', target: 'ex_6', animated: true, style: { stroke: '#ef4444', strokeWidth: 2 } },
+  { id: 'ee_4', source: 'ex_3', target: 'ex_4', animated: true, style: { stroke: '#6366f1', strokeWidth: 2 } },
+  { id: 'ee_5', source: 'ex_4', target: 'ex_5', animated: true, style: { stroke: '#6366f1', strokeWidth: 2 } },
+  { id: 'ee_6', source: 'ex_6', target: 'ex_7', animated: true, style: { stroke: '#6366f1', strokeWidth: 2 } },
 ];
 
 // ─── Inner component — uses useReactFlow, must be inside ReactFlowProvider ──
@@ -113,7 +113,6 @@ function FlowContent() {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
-  const [nodeCount, setNodeCount] = useState(0);
 
   // ── Connections ──────────────────────────────────────────────────────────
 
@@ -153,24 +152,22 @@ function FlowContent() {
       const raw = event.dataTransfer.getData('application/reactflow');
       if (!raw) return;
 
-      const catalogueNode = JSON.parse(raw) as CatalogueNode & { nodeType: string };
+      const dropped = JSON.parse(raw) as CatalogueNode & { reactFlowType: string };
       const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
 
       const newNode: Node = {
         id: newId(),
-        type: catalogueNode.nodeType,
+        type: dropped.reactFlowType,
         position,
         data: {
-          label: catalogueNode.label,
-          method: catalogueNode.method,
-          description: catalogueNode.description,
-          subtype: catalogueNode.subtype,
-          params: { ...catalogueNode.params },
+          label: dropped.label,
+          nodeType: dropped.nodeType,
+          description: dropped.description,
+          params: { ...dropped.params },
         },
       };
 
       setNodes((nds) => nds.concat(newNode));
-      setNodeCount((c) => c + 1);
     },
     [screenToFlowPosition, setNodes]
   );

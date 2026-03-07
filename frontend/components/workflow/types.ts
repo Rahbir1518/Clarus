@@ -1,149 +1,145 @@
+// ---------------------------------------------------------------------------
+// The `nodeType` field is the dispatch key used by the backend workflow engine
+// (workflow_engine.py). It MUST match one of:
+//   TRIGGER_TYPES, ACTION_TYPES, CONDITION_TYPES, or OUTPUT_TYPES
+// React Flow uses the top-level `type` field for rendering (trigger | action |
+// conditional | endpoint), while `data.nodeType` tells the engine what to do.
+// ---------------------------------------------------------------------------
+
 export interface CatalogueNode {
-  subtype: string;
-  label: string;
-  method: string;
+  nodeType: string;             // backend dispatch key (e.g. "call_patient")
+  label: string;                // UI display name
   description: string;
   params: Record<string, string>;
 }
 
 export interface NodeCatalogueCategory {
   category: string;
-  nodeType: 'trigger' | 'action' | 'conditional' | 'endpoint';
+  /** React Flow custom node component type */
+  reactFlowType: 'trigger' | 'action' | 'conditional' | 'endpoint';
   nodes: CatalogueNode[];
 }
 
 export interface WorkflowNodeData {
   label: string;
-  method: string;
+  nodeType: string;             // backend dispatch key
   description: string;
-  subtype: string;
   params: Record<string, string>;
 }
+
+// ---------------------------------------------------------------------------
+// Node catalogue — every entry corresponds to a type recognised by the
+// backend's workflow_engine.py dispatch table.
+// ---------------------------------------------------------------------------
 
 export const NODE_CATALOGUE: NodeCatalogueCategory[] = [
   {
     category: 'Triggers',
-    nodeType: 'trigger',
+    reactFlowType: 'trigger',
     nodes: [
       {
-        subtype: 'lab_event',
-        label: 'Lab Event',
-        method: 'handle_lab_event',
-        description: 'Triggered when a lab result is received',
-        params: { patient_id: '', report_type: '' },
+        nodeType: 'lab_results_received',
+        label: 'Lab Results Received',
+        description: 'Triggered when lab results arrive for a patient',
+        params: {},
       },
       {
-        subtype: 'webhook',
-        label: 'Webhook',
-        method: 'handle_webhook',
-        description: 'Triggered by an incoming webhook request',
-        params: { source: '' },
+        nodeType: 'abnormal_result_detected',
+        label: 'Abnormal Result',
+        description: 'Triggered when an abnormal lab value is detected',
+        params: {},
+      },
+      {
+        nodeType: 'follow_up_due',
+        label: 'Follow-Up Due',
+        description: 'Triggered when a patient is due for a follow-up visit',
+        params: {},
+      },
+      {
+        nodeType: 'appointment_missed',
+        label: 'Appointment Missed',
+        description: 'Triggered when a patient misses a scheduled appointment',
+        params: {},
       },
     ],
   },
   {
     category: 'Actions',
-    nodeType: 'action',
+    reactFlowType: 'action',
     nodes: [
       {
-        subtype: 'get_patient',
-        label: 'Get Patient',
-        method: 'get_patient_by_id',
-        description: 'Fetch patient record from Supabase',
-        params: { patient_id: '{{trigger.patient_id}}' },
+        nodeType: 'call_patient',
+        label: 'Call Patient',
+        description: 'Place an outbound Twilio call to the patient',
+        params: { message: '' },
       },
       {
-        subtype: 'initiate_call',
-        label: 'Initiate Call',
-        method: 'initiate_outbound_call',
-        description: 'Start an ElevenLabs outbound call via Twilio',
-        params: { phone_number: '{{patient.phone_number}}', system_prompt: '' },
+        nodeType: 'send_sms',
+        label: 'Send SMS',
+        description: 'Send an SMS to the patient via Twilio',
+        params: { message: '' },
       },
       {
-        subtype: 'create_call_record',
-        label: 'Create Call Record',
-        method: 'create_call_record',
-        description: 'Save call record to Supabase',
-        params: { patient_id: '', call_reason: '', conversation_id: '' },
+        nodeType: 'schedule_appointment',
+        label: 'Schedule Appointment',
+        description: 'Schedule a follow-up appointment for the patient',
+        params: {},
       },
       {
-        subtype: 'update_call_record',
-        label: 'Update Call Record',
-        method: 'update_call_record',
-        description: 'Update call record with outcome data',
-        params: { call_id: '', call_outcome: '', patient_confirmed: '' },
-      },
-      {
-        subtype: 'create_calendar_event',
-        label: 'Create Calendar Event',
-        method: 'create_calendar_event',
-        description: 'Add appointment to Google Calendar',
-        params: { patient_name: '', doctor_name: '', date: '', time: '' },
-      },
-      {
-        subtype: 'create_appointment',
-        label: 'Create Appointment',
-        method: 'create_appointment',
-        description: 'Save appointment record to Supabase',
-        params: { call_id: '', patient_id: '', date: '', time: '' },
+        nodeType: 'send_notification',
+        label: 'Send Notification',
+        description: 'Send an internal notification to staff',
+        params: { message: '' },
       },
     ],
   },
   {
     category: 'Conditionals',
-    nodeType: 'conditional',
+    reactFlowType: 'conditional',
     nodes: [
       {
-        subtype: 'if_condition',
-        label: 'If Condition',
-        method: 'evaluate_condition',
-        description: 'Branch workflow based on a custom condition',
-        params: { condition: '' },
+        nodeType: 'check_result_values',
+        label: 'Check Result Values',
+        description: 'Branch based on whether lab results are within normal range',
+        params: { result: '' },
       },
       {
-        subtype: 'patient_confirmed',
-        label: 'Patient Confirmed?',
-        method: 'check_patient_confirmed',
-        description: 'True if patient confirmed an appointment',
-        params: {},
+        nodeType: 'check_insurance',
+        label: 'Check Insurance',
+        description: 'Branch based on patient insurance status',
+        params: { result: '' },
       },
       {
-        subtype: 'appointment_booked',
-        label: 'Appointment Booked?',
-        method: 'check_appointment_booked',
-        description: "True if call_outcome is 'appointment_booked'",
-        params: {},
+        nodeType: 'check_patient_age',
+        label: 'Check Patient Age',
+        description: 'Branch based on patient age range',
+        params: { result: '' },
       },
     ],
   },
   {
     category: 'Output',
-    nodeType: 'endpoint',
+    reactFlowType: 'endpoint',
     nodes: [
       {
-        subtype: 'success',
-        label: 'Success',
-        method: 'return_success',
-        description: 'End workflow with a success response',
-        params: { message: 'Workflow completed successfully' },
+        nodeType: 'log_completion',
+        label: 'Log Completion',
+        description: 'Log that the workflow completed successfully',
+        params: {},
       },
       {
-        subtype: 'log_error',
-        label: 'Log Error',
-        method: 'log_error',
-        description: 'Log an error and terminate the workflow',
-        params: { message: '', level: 'error' },
-      },
-      {
-        subtype: 'return_response',
-        label: 'Return Response',
-        method: 'return_response',
-        description: 'Return a JSON response to the caller',
-        params: { status: '200', data: '{}' },
+        nodeType: 'send_summary_to_doctor',
+        label: 'Send Summary to Doctor',
+        description: 'Send the workflow execution summary to the doctor',
+        params: {},
       },
     ],
   },
 ];
+
+// ---------------------------------------------------------------------------
+// Visual styles per category — used by node components, palette, and panel
+// ---------------------------------------------------------------------------
 
 export const CATEGORY_STYLES = {
   Triggers: {

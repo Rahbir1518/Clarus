@@ -35,8 +35,8 @@ export default function ActionNode({ data, selected }: NodeProps) {
       {/* Label */}
       <p className="text-sm font-semibold text-white leading-tight">{d.label}</p>
 
-      {/* Method */}
-      <p className="text-[11px] text-purple-300/50 font-mono mt-1 truncate">{d.method}()</p>
+      {/* Node type */}
+      <p className="text-[11px] text-purple-300/50 font-mono mt-1 truncate">{d.nodeType}</p>
 
       {/* Param preview */}
       {paramKeys.length > 0 && (

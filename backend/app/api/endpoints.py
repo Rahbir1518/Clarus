@@ -180,7 +180,7 @@ async def lab_event(body: LabEventRequest):
         nodes: list[dict] = wf.get("nodes") or []
         # Check if any trigger node matches the incoming event type
         has_matching_trigger = any(
-            (n.get("type") or n.get("data", {}).get("nodeType", "")).lower() == body.trigger_type.lower()
+            (n.get("data", {}).get("nodeType", "") or n.get("type", "")).lower() == body.trigger_type.lower()
             for n in nodes
         )
         if not has_matching_trigger:

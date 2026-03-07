@@ -3,11 +3,11 @@
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { type WorkflowNodeData } from '../types';
 
-const SUBTYPE_STYLES: Record<
+const NODE_TYPE_STYLES: Record<
   string,
   { bg: string; border: string; selectedBorder: string; shadow: string; icon: string; accent: string }
 > = {
-  success: {
+  log_completion: {
     bg: 'bg-emerald-950/70',
     border: 'border-emerald-700/60',
     selectedBorder: 'border-emerald-400',
@@ -15,15 +15,7 @@ const SUBTYPE_STYLES: Record<
     icon: '✓',
     accent: 'text-emerald-400',
   },
-  log_error: {
-    bg: 'bg-red-950/70',
-    border: 'border-red-700/60',
-    selectedBorder: 'border-red-400',
-    shadow: 'shadow-red-500/25',
-    icon: '✗',
-    accent: 'text-red-400',
-  },
-  return_response: {
+  send_summary_to_doctor: {
     bg: 'bg-gray-800/70',
     border: 'border-gray-600/60',
     selectedBorder: 'border-gray-400',
@@ -33,9 +25,11 @@ const SUBTYPE_STYLES: Record<
   },
 };
 
+const DEFAULT_STYLE = NODE_TYPE_STYLES.log_completion;
+
 export default function EndpointNode({ data, selected }: NodeProps) {
   const d = data as unknown as WorkflowNodeData;
-  const style = SUBTYPE_STYLES[d.subtype] ?? SUBTYPE_STYLES.return_response;
+  const style = NODE_TYPE_STYLES[d.nodeType] ?? DEFAULT_STYLE;
 
   return (
     <div
@@ -49,7 +43,7 @@ export default function EndpointNode({ data, selected }: NodeProps) {
         }
       `}
     >
-      {/* Target handle — top center */}
+      {/* Target handle -- top center */}
       <Handle
         type="target"
         position={Position.Top}
@@ -65,8 +59,8 @@ export default function EndpointNode({ data, selected }: NodeProps) {
       {/* Label */}
       <p className="text-sm font-semibold text-white leading-tight">{d.label}</p>
 
-      {/* Method */}
-      <p className={`text-[11px] font-mono mt-1 truncate ${style.accent} opacity-50`}>{d.method}()</p>
+      {/* Node type */}
+      <p className={`text-[11px] font-mono mt-1 truncate ${style.accent} opacity-50`}>{d.nodeType}</p>
     </div>
   );
 }

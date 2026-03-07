@@ -67,11 +67,11 @@ export function PropertiesPanel({ selectedNode, onUpdateParams, onDeleteNode }: 
           <p className="text-sm font-semibold text-white">{data.label}</p>
         </div>
 
-        {/* Method */}
+        {/* Node Type */}
         <div>
-          <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-1.5">Method</p>
+          <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-1.5">Node Type</p>
           <code className="block text-xs font-mono text-indigo-300 bg-gray-800 px-3 py-2 rounded-lg break-all">
-            {data.method}()
+            {data.nodeType}
           </code>
         </div>
 
