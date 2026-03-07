@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 
 export function Footer() {
   return (
@@ -7,7 +8,10 @@ export function Footer() {
         <div className="flex flex-col justify-between gap-10 md:flex-row">
           {/* Left */}
           <div>
-            <span className="font-serif text-xl tracking-tight">Clarus</span>
+            <div className="flex items-center gap-2">
+              <Image src="/assets/Clarus.png" alt="Clarus" width={24} height={24} />
+              <span className="font-serif text-xl tracking-tight">Clarus</span>
+            </div>
             <p className="mt-3 text-sm text-muted-foreground">
               Intelligent clinical workflow automation
             </p>
@@ -52,12 +56,6 @@ export function Footer() {
                   className="text-sm text-muted-foreground transition-colors hover:text-foreground"
                 >
                   Terms
-                </Link>
-                <Link
-                  href="#"
-                  className="text-sm text-muted-foreground transition-colors hover:text-foreground"
-                >
-                  HIPAA
                 </Link>
               </div>
             </div>

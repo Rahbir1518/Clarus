@@ -297,11 +297,7 @@ export default function FeaturesPage() {
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-foreground/30" />
-                  CSV export for compliance reviews
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-foreground/30" />
-                  All data access logged for audit trails
+                  CSV export for reporting
                 </li>
               </ul>
             </div>
@@ -364,23 +360,6 @@ export default function FeaturesPage() {
                 </p>
               </div>
             ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Compliance bar */}
-      <section className="border-y border-border py-12">
-        <div className="mx-auto max-w-7xl px-6">
-          <div className="flex flex-col items-start justify-between gap-6 md:flex-row md:items-center">
-            <p className="text-sm text-muted-foreground">
-              HIPAA &amp; PIPEDA compliant &nbsp;&middot;&nbsp; TLS 1.2+ in
-              transit &nbsp;&middot;&nbsp; AES-256 at rest &nbsp;&middot;&nbsp;
-              SOC 2 in progress
-            </p>
-            <p className="text-xs text-muted-foreground/60">
-              All patient data encrypted. All access logged for compliance
-              review.
-            </p>
           </div>
         </div>
       </section>
