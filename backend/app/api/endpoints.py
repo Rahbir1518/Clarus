@@ -53,6 +53,12 @@ class WorkflowUpdate(BaseModel):
     edges: list[dict[str, Any]] | None = None
 
 
+class PatientCreate(BaseModel):
+    name: str
+    phone: str
+    doctor_id: str
+
+
 class ExecuteRequest(BaseModel):
     patient_id: str
     trigger_node_type: str | None = None
@@ -63,6 +69,22 @@ class LabEventRequest(BaseModel):
     patient_id: str
     doctor_id: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# Patient endpoints
+# ---------------------------------------------------------------------------
+
+@router.get("/patients")
+async def list_patients(doctor_id: str | None = None):
+    return db.list_patients(doctor_id=doctor_id)
+
+
+@router.post("/patients", status_code=201)
+async def create_patient(body: PatientCreate):
+    payload = body.model_dump()
+    sb = db.get_supabase()
+    return sb.table("patients").insert(payload).execute().data[0]
 
 
 # ---------------------------------------------------------------------------

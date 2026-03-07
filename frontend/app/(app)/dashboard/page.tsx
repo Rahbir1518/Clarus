@@ -1,5 +1,9 @@
 "use client";
 
+import { useState, useEffect, useCallback } from "react";
+import { useAuth0 } from "@auth0/auth0-react";
+import { listPatients, createPatient } from "@/services/api";
+
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -25,6 +29,8 @@ import {
   User,
   Activity,
   ArrowUpRight,
+  UserPlus,
+  X,
 } from "lucide-react";
 
 // ---------------------------------------------------------------------------
@@ -119,6 +125,51 @@ const stepStyles = {
 // ---------------------------------------------------------------------------
 
 export default function DashboardPage() {
+  // ── Patient management state ──────────────────────────────────────────
+  const [patients, setPatients] = useState<any[]>([]);
+  const [loadingPatients, setLoadingPatients] = useState(true);
+  const [showAddPatient, setShowAddPatient] = useState(false);
+  const [patientName, setPatientName] = useState("");
+  const [patientPhone, setPatientPhone] = useState("");
+  const [savingPatient, setSavingPatient] = useState(false);
+
+  const { user } = useAuth0();
+  const doctorId = user?.sub;
+
+  const fetchPatients = useCallback(async () => {
+    setLoadingPatients(true);
+    try {
+      const data = await listPatients(doctorId);
+      setPatients(Array.isArray(data) ? data : []);
+    } catch {
+      setPatients([]);
+    } finally {
+      setLoadingPatients(false);
+    }
+  }, [doctorId]);
+
+  useEffect(() => { fetchPatients(); }, [fetchPatients]);
+
+  const handleAddPatient = useCallback(async () => {
+    if (!patientName.trim() || !patientPhone.trim()) return;
+    setSavingPatient(true);
+    try {
+      await createPatient({
+        name: patientName.trim(),
+        phone: patientPhone.trim(),
+        doctor_id: doctorId ?? "unknown",
+      });
+      setPatientName("");
+      setPatientPhone("");
+      setShowAddPatient(false);
+      fetchPatients();
+    } catch {
+      /* ignore */
+    } finally {
+      setSavingPatient(false);
+    }
+  }, [patientName, patientPhone, doctorId, fetchPatients]);
+
   return (
     <div className="space-y-6">
       {/* Page header */}
@@ -129,12 +180,18 @@ export default function DashboardPage() {
             Overview of your clinic&apos;s automation activity.
           </p>
         </div>
-        <Link href="/triggers">
-          <Button>
-            <Zap className="size-4" data-icon="inline-start" />
-            Manage Triggers
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setShowAddPatient(true)}>
+            <UserPlus className="size-4" data-icon="inline-start" />
+            Add Patient
           </Button>
-        </Link>
+          <Link href="/triggers">
+            <Button>
+              <Zap className="size-4" data-icon="inline-start" />
+              Manage Triggers
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* Quick stats */}
@@ -155,6 +212,95 @@ export default function DashboardPage() {
           </div>
         ))}
       </div>
+
+      {/* Patient Management card */}
+      <div className="rounded-xl border border-border bg-card">
+        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+          <div className="flex items-center gap-2">
+            <User className="size-4 text-primary" />
+            <div>
+              <h3 className="text-sm font-semibold">Patients</h3>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {loadingPatients ? "Loading…" : `${patients.length} patient${patients.length !== 1 ? "s" : ""} registered`}
+              </p>
+            </div>
+          </div>
+          <Button size="sm" variant="outline" onClick={() => setShowAddPatient(true)}>
+            <UserPlus className="size-3.5" data-icon="inline-start" />
+            Add Patient
+          </Button>
+        </div>
+
+        {loadingPatients ? (
+          <div className="px-5 py-6 text-sm text-muted-foreground">Loading patients…</div>
+        ) : patients.length === 0 ? (
+          <div className="px-5 py-6 text-sm text-muted-foreground">No patients yet. Add one to get started.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border">
+                  {["Name", "Phone", "ID"].map((h) => (
+                    <th key={h} className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {patients.map((p) => (
+                  <tr key={p.id} className="border-b border-border/50 last:border-0 hover:bg-muted/30">
+                    <td className="px-5 py-3 font-medium">{p.name}</td>
+                    <td className="px-5 py-3 text-muted-foreground">{p.phone}</td>
+                    <td className="px-5 py-3">
+                      <code className="rounded bg-muted px-2 py-0.5 font-mono text-xs">{p.id.slice(0, 8)}…</code>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Add Patient modal */}
+      {showAddPatient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-card border border-border rounded-xl p-6 w-full max-w-sm shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-base font-semibold">Add Patient</h2>
+              <button onClick={() => setShowAddPatient(false)} className="text-muted-foreground hover:text-foreground">
+                <X className="size-4" />
+              </button>
+            </div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Full Name *</label>
+            <input
+              autoFocus
+              type="text"
+              value={patientName}
+              onChange={(e) => setPatientName(e.target.value)}
+              placeholder="e.g. Jane Doe"
+              className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary mb-3"
+            />
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Phone Number *</label>
+            <input
+              type="tel"
+              value={patientPhone}
+              onChange={(e) => setPatientPhone(e.target.value)}
+              placeholder="e.g. +1 555 000 0000"
+              className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary mb-4"
+            />
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setShowAddPatient(false)}>Cancel</Button>
+              <Button
+                size="sm"
+                disabled={savingPatient || !patientName.trim() || !patientPhone.trim()}
+                onClick={handleAddPatient}
+              >
+                {savingPatient ? "Saving…" : "Save Patient"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main two-column area */}
       <div className="grid gap-6 xl:grid-cols-[1fr_320px]">

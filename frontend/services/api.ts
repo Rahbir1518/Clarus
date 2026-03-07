@@ -35,6 +35,10 @@ export async function listWorkflows(doctorId?: string, status?: string) {
   if (status) params.set('status', status);
   const qs = params.toString();
   const response = await fetch(`${API_URL}/api/workflows${qs ? `?${qs}` : ''}`);
+  if (!response.ok) {
+    const detail = await response.text().catch(() => response.statusText);
+    throw new Error(`Failed to fetch workflows (${response.status}): ${detail}`);
+  }
   return response.json();
 }
 
@@ -84,6 +88,31 @@ export async function deleteWorkflow(workflowId: string) {
     method: 'DELETE',
   });
   return response;
+}
+
+// ---------------------------------------------------------------------------
+// Patients
+// ---------------------------------------------------------------------------
+
+export async function listPatients(doctorId?: string) {
+  const params = new URLSearchParams();
+  if (doctorId) params.set('doctor_id', doctorId);
+  const qs = params.toString();
+  const response = await fetch(`${API_URL}/api/patients${qs ? `?${qs}` : ''}`);
+  return response.json();
+}
+
+export async function createPatient(payload: {
+  name: string;
+  phone: string;
+  doctor_id: string;
+}) {
+  const response = await fetch(`${API_URL}/api/patients`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return response.json();
 }
 
 // ---------------------------------------------------------------------------
