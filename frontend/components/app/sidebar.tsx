@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { ArrowUpRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: "grid" },
-  { href: "/triggers", label: "Triggers", icon: "zap" },
   { href: "/patients", label: "Patients", icon: "users" },
   { href: "/calls", label: "Call Log", icon: "phone" },
   { href: "/appointments", label: "Appointments", icon: "calendar" },
@@ -29,6 +29,13 @@ export function Sidebar() {
       </div>
 
       <nav className="flex-1 space-y-1 px-3 py-4">
+        <Link
+          href="/workflow"
+          className="mb-2 flex items-center justify-center gap-1.5 rounded-lg bg-foreground px-3 py-2.5 text-sm font-medium text-background transition-opacity hover:opacity-80"
+        >
+          Workflow
+          <ArrowUpRight className="h-3.5 w-3.5" />
+        </Link>
         {navItems.map((item) => {
           const isActive = pathname.startsWith(item.href);
           return (

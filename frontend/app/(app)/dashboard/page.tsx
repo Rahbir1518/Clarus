@@ -592,10 +592,7 @@ export default function DashboardPage() {
               <Workflow className="size-4 text-primary" />
               <h3 className="text-sm font-semibold">Workflows</h3>
             </div>
-            <div className="flex gap-1">
-              <Link href="/workflow"><Button size="sm" variant="ghost"><Zap className="size-3" /></Button></Link>
-              <Link href="/triggers"><Button size="sm" variant="ghost">All <ArrowRight className="size-3" /></Button></Link>
-            </div>
+            <Link href="/workflow"><Button size="sm" variant="ghost"><Zap className="size-3" /> Open Builder</Button></Link>
           </div>
           {loadingData ? (
             <div className="px-5 py-6 text-sm text-muted-foreground">Loading…</div>
@@ -651,17 +648,14 @@ export default function DashboardPage() {
         <div className="rounded-xl border border-border bg-card p-4">
           <h3 className="mb-3 text-sm font-semibold">Quick Links</h3>
           <div className="space-y-2">
-            <Link href="/triggers" className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm hover:bg-muted/50 transition-colors">
-              <Zap className="size-4 text-primary" /><span>Manage Workflows</span><ArrowUpRight className="size-3 ml-auto text-muted-foreground" />
+            <Link href="/workflow" className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm hover:bg-muted/50 transition-colors">
+              <Activity className="size-4 text-primary" /><span>Workflow Builder</span><ArrowUpRight className="size-3 ml-auto text-muted-foreground" />
             </Link>
             <Link href="/patients" className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm hover:bg-muted/50 transition-colors">
               <User className="size-4 text-primary" /><span>Patient Directory</span><ArrowUpRight className="size-3 ml-auto text-muted-foreground" />
             </Link>
             <Link href="/calls" className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm hover:bg-muted/50 transition-colors">
               <FileText className="size-4 text-primary" /><span>Call Logs</span><ArrowUpRight className="size-3 ml-auto text-muted-foreground" />
-            </Link>
-            <Link href="/workflow" className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm hover:bg-muted/50 transition-colors">
-              <Activity className="size-4 text-primary" /><span>Workflow Builder</span><ArrowUpRight className="size-3 ml-auto text-muted-foreground" />
             </Link>
             <Link href="/audit-log" className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm hover:bg-muted/50 transition-colors">
               <Clock className="size-4 text-primary" /><span>Audit Log</span><ArrowUpRight className="size-3 ml-auto text-muted-foreground" />
