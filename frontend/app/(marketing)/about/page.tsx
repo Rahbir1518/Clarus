@@ -28,7 +28,7 @@ const milestones = [
   { phase: "Call Integration", detail: "Outbound call and IVR flow functional" },
   { phase: "Booking Integration", detail: "Calendar read/write with confirmation" },
   { phase: "Admin UI", detail: "Trigger configuration and audit log complete" },
-  { phase: "QA & Compliance", detail: "HIPAA review, UAT, load testing" },
+  { phase: "QA & Testing", detail: "UAT, load testing" },
   { phase: "Beta Launch", detail: "Pilot with initial clinic partners" },
   { phase: "General Availability", detail: "Full public launch" },
 ];

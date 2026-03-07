@@ -3,6 +3,7 @@ FastAPI route endpoints for MedTrigger.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -277,6 +278,309 @@ async def delete_workflow(workflow_id: str):
 
 
 # ---------------------------------------------------------------------------
+# Date/time helpers for ElevenLabs DCR values
+# ---------------------------------------------------------------------------
+
+def _resolve_date(raw: str) -> str:
+    """
+    Convert a raw date string from ElevenLabs into YYYY-MM-DD format.
+
+    Handles:
+      - Already formatted: "2026-03-12" → "2026-03-12"
+      - Day names: "Thursday", "thursday" → next Thursday's date
+      - Relative: "tomorrow" → tomorrow's date
+      - Month + day: "March 12" → "2026-03-12"
+      - Empty/unknown → "" (unchanged)
+    """
+    from datetime import date, timedelta
+    import re
+
+    if not raw or not raw.strip():
+        return ""
+
+    raw = raw.strip()
+
+    # Already in YYYY-MM-DD format
+    if re.match(r"^\d{4}-\d{2}-\d{2}$", raw):
+        return raw
+
+    today = date.today()
+
+    # "tomorrow"
+    if raw.lower() == "tomorrow":
+        return (today + timedelta(days=1)).isoformat()
+
+    # "today"
+    if raw.lower() == "today":
+        return today.isoformat()
+
+    # Day name like "Thursday", "thursday"
+    day_names = {
+        "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
+        "friday": 4, "saturday": 5, "sunday": 6,
+    }
+    if raw.lower() in day_names:
+        target_day = day_names[raw.lower()]
+        days_ahead = (target_day - today.weekday()) % 7
+        if days_ahead == 0:
+            days_ahead = 7  # Next week if today is that day
+        return (today + timedelta(days=days_ahead)).isoformat()
+
+    # "March 12", "march 12th", "Mar 12"
+    month_names = {
+        "jan": 1, "january": 1, "feb": 2, "february": 2, "mar": 3, "march": 3,
+        "apr": 4, "april": 4, "may": 5, "jun": 6, "june": 6, "jul": 7, "july": 7,
+        "aug": 8, "august": 8, "sep": 9, "september": 9, "oct": 10, "october": 10,
+        "nov": 11, "november": 11, "dec": 12, "december": 12,
+    }
+    match = re.match(r"([a-zA-Z]+)\s+(\d{1,2})", raw)
+    if match:
+        month_str = match.group(1).lower()
+        day_num = int(match.group(2))
+        month_num = month_names.get(month_str)
+        if month_num:
+            year = today.year
+            candidate = date(year, month_num, day_num)
+            if candidate < today:
+                candidate = date(year + 1, month_num, day_num)
+            return candidate.isoformat()
+
+    # Return as-is if we can't parse it (better than empty)
+    return raw
+
+
+def _resolve_time(raw: str) -> str:
+    """
+    Convert a raw time string into HH:MM format.
+
+    Handles:
+      - Already formatted: "14:00" → "14:00"
+      - 12-hour: "2:15 PM", "2:15pm" → "14:15"
+      - Partial: "2:15" → "14:15" (assumes PM for appointment times)
+      - Words: "two fifteen" → best effort
+      - Empty → "09:00" (default)
+    """
+    import re
+
+    if not raw or not raw.strip():
+        return "09:00"
+
+    raw = raw.strip()
+
+    # Already in HH:MM format (24-hour)
+    if re.match(r"^\d{1,2}:\d{2}$", raw):
+        parts = raw.split(":")
+        hour = int(parts[0])
+        minute = parts[1]
+        # If hour < 8, assume PM for medical appointments
+        if hour < 8:
+            hour += 12
+        return f"{hour:02d}:{minute}"
+
+    # 12-hour format: "2:15 PM", "2:15pm", "10:30 AM"
+    match = re.match(r"(\d{1,2}):(\d{2})\s*(am|pm|AM|PM)", raw)
+    if match:
+        hour = int(match.group(1))
+        minute = match.group(2)
+        ampm = match.group(3).lower()
+        if ampm == "pm" and hour != 12:
+            hour += 12
+        elif ampm == "am" and hour == 12:
+            hour = 0
+        return f"{hour:02d}:{minute}"
+
+    # Just a number like "14" or "2"
+    match = re.match(r"^(\d{1,2})$", raw)
+    if match:
+        hour = int(match.group(1))
+        if hour < 8:
+            hour += 12
+        return f"{hour:02d}:00"
+
+    return "09:00"
+
+
+# ---------------------------------------------------------------------------
+# Background auto-polling for ElevenLabs call results
+# ---------------------------------------------------------------------------
+
+async def _auto_poll_call_result(log_id: str, max_attempts: int = 40, interval: int = 30):
+    """
+    Background task that polls ElevenLabs every *interval* seconds until the
+    call finishes, then processes the result (updates call_log, creates
+    Google Calendar event if the patient confirmed).
+
+    This replaces the need to manually call POST /api/call-logs/{id}/check.
+    """
+    from app.services.elevenlabs_service import get_conversation
+    from app.services.google_calendar_service import create_calendar_event
+
+    logger.info("Auto-poll started for call_log %s (max %d attempts, %ds interval)", log_id, max_attempts, interval)
+
+    # Wait a bit before the first poll — the call takes time to connect
+    await asyncio.sleep(15)
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            call_log = db.get_call_log(log_id)
+            if not call_log:
+                logger.warning("Auto-poll: call_log %s not found, stopping.", log_id)
+                return
+            if call_log.get("status") == "completed":
+                logger.info("Auto-poll: call_log %s already completed.", log_id)
+                return
+
+            # Find conversation_id from execution_log
+            conversation_id = None
+            exec_log = call_log.get("execution_log") or []
+            for step in exec_log:
+                if step.get("conversation_id"):
+                    conversation_id = step["conversation_id"]
+                    break
+
+            if not conversation_id:
+                logger.info("Auto-poll attempt %d: no conversation_id yet, waiting...", attempt)
+                await asyncio.sleep(interval)
+                continue
+
+            # Poll ElevenLabs
+            conversation = await get_conversation(conversation_id)
+            conv_status = conversation.get("status", "unknown")
+            logger.info("Auto-poll attempt %d: conversation status = %s", attempt, conv_status)
+
+            if conv_status in ("in_progress", "processing", "initiated"):
+                await asyncio.sleep(interval)
+                continue
+
+            # ---- Conversation is done — extract results ----
+            analysis = conversation.get("analysis", {})
+            dcr = analysis.get("data_collection_results", {})
+
+            def _dcr_val(key: str) -> str:
+                entry = dcr.get(key, {})
+                if isinstance(entry, dict):
+                    return str(entry.get("value", ""))
+                return str(entry)
+
+            call_outcome = _dcr_val("call_outcome")
+            patient_confirmed_raw = _dcr_val("patient_confirmed")
+            confirmed_date = _dcr_val("confirmed_date")
+            confirmed_time = _dcr_val("confirmed_time")
+            doctor_name = _dcr_val("doctor_name")
+            availability_notes = _dcr_val("patient_availability_notes")
+            transcript = conversation.get("transcript", "")
+
+            logger.info(
+                "Auto-poll DCR values — outcome=%s, confirmed=%s, date='%s', time='%s'",
+                call_outcome, patient_confirmed_raw, confirmed_date, confirmed_time,
+            )
+
+            patient_confirmed = patient_confirmed_raw.lower() in ("true", "yes", "1")
+
+            # Parse relative dates like "Thursday", "tomorrow", "March 12" into YYYY-MM-DD
+            confirmed_date = _resolve_date(confirmed_date)
+            confirmed_time = _resolve_time(confirmed_time)
+
+            elevenlabs_data = {
+                "conversation_id": conversation_id,
+                "call_outcome": call_outcome,
+                "patient_confirmed": patient_confirmed,
+                "confirmed_date": confirmed_date,
+                "confirmed_time": confirmed_time,
+                "doctor_name": doctor_name,
+                "patient_availability_notes": availability_notes,
+                "transcript": transcript[:5000] if isinstance(transcript, str) else "",
+            }
+
+            exec_log.append({
+                "node_id": "elevenlabs_auto_poll",
+                "node_type": "poll_result",
+                "label": "ElevenLabs Call Completed (auto-polled)",
+                "status": "ok",
+                "message": f"Call outcome: {call_outcome}. Patient confirmed: {patient_confirmed}.",
+                **elevenlabs_data,
+            })
+
+            db.update_call_log(log_id, {
+                "outcome": call_outcome or "call_completed",
+                "status": "completed",
+                "execution_log": exec_log,
+            })
+
+            # ---- If patient confirmed → create Google Calendar event ----
+            if patient_confirmed and confirmed_date:
+                doctor_id = _get_doctor_id_from_workflow(call_log.get("workflow_id"))
+                if not doctor_id:
+                    logger.warning("Auto-poll: No doctor_id found — cannot create calendar event")
+                    exec_log.append({
+                        "node_id": "calendar_auto_poll",
+                        "node_type": "schedule_appointment",
+                        "label": "Google Calendar Event Skipped",
+                        "status": "error",
+                        "message": "No doctor_id (Auth0 sub) found on workflow — cannot access Google Calendar.",
+                    })
+                    db.update_call_log(log_id, {"execution_log": exec_log})
+                else:
+                    patient_id = call_log.get("patient_id")
+                    patient = db.get_patient(patient_id) if patient_id else None
+                    patient_name = patient.get("name", "Patient") if patient else "Patient"
+
+                    start_iso = f"{confirmed_date}T{confirmed_time or '09:00'}:00"
+                    logger.info("Auto-poll: Creating calendar event — start=%s, doctor=%s", start_iso, doctor_id)
+                    try:
+                        calendar_event = await create_calendar_event(
+                            auth0_user_id=doctor_id,
+                            summary=f"Patient Appointment: {patient_name}",
+                            start_iso=start_iso,
+                            description=(
+                                f"Follow-up appointment for {patient_name}.\n"
+                                f"Scheduled via MedTrigger workflow.\n"
+                                f"Call outcome: {call_outcome}"
+                            ),
+                            attendee_email=patient.get("email") if patient else None,
+                        )
+                        logger.info("Auto-poll: Calendar event created — %s", calendar_event.get("id"))
+                        exec_log.append({
+                            "node_id": "calendar_auto_poll",
+                            "node_type": "schedule_appointment",
+                            "label": "Google Calendar Event Created",
+                            "status": "ok",
+                            "message": f"Event: {calendar_event.get('htmlLink', '')}",
+                            "calendar_event_id": calendar_event.get("id"),
+                        })
+                        db.update_call_log(log_id, {"execution_log": exec_log})
+                    except Exception as exc:
+                        logger.exception("Auto-poll: Calendar event creation failed")
+                        exec_log.append({
+                            "node_id": "calendar_auto_poll",
+                            "node_type": "schedule_appointment",
+                            "label": "Google Calendar Event Failed",
+                            "status": "error",
+                            "message": str(exc),
+                        })
+                        db.update_call_log(log_id, {"execution_log": exec_log})
+            elif patient_confirmed and not confirmed_date:
+                logger.warning("Auto-poll: Patient confirmed but no date collected from call")
+                exec_log.append({
+                    "node_id": "calendar_auto_poll",
+                    "node_type": "schedule_appointment",
+                    "label": "Google Calendar Event Skipped",
+                    "status": "error",
+                    "message": "Patient confirmed but ElevenLabs did not capture a date. Check your agent's data collection fields.",
+                })
+                db.update_call_log(log_id, {"execution_log": exec_log})
+
+            logger.info("Auto-poll finished for call_log %s", log_id)
+            return
+
+        except Exception as exc:
+            logger.warning("Auto-poll attempt %d error: %s", attempt, exc)
+            await asyncio.sleep(interval)
+
+    logger.warning("Auto-poll: max attempts reached for call_log %s", log_id)
+
+
+# ---------------------------------------------------------------------------
 # Execute a single workflow manually
 # ---------------------------------------------------------------------------
 
@@ -307,19 +611,40 @@ async def execute_workflow_endpoint(workflow_id: str, body: ExecuteRequest):
         doctor_id=wf.get("doctor_id"),
     )
 
+    # Check if a call was initiated (look for conversation_id in the log)
+    call_initiated = any(step.get("conversation_id") for step in execution_log)
+
     # Determine final status
     has_error = any(s.get("status") == "error" for s in execution_log)
-    final_status = "failed" if has_error else "completed"
+    if has_error:
+        final_status = "failed"
+    elif call_initiated:
+        # Call is in progress — keep status as "running" so the
+        # background poller knows it still needs processing
+        final_status = "running"
+    else:
+        final_status = "completed"
 
     db.update_call_log(log_id, {
         "status": final_status,
         "execution_log": execution_log,
     })
 
+    # If a call was initiated, start background polling automatically
+    if call_initiated:
+        asyncio.create_task(_auto_poll_call_result(log_id))
+        logger.info("Background auto-poller started for call_log %s", log_id)
+
     return {
         "call_log_id": log_id,
         "status": final_status,
         "execution_log": execution_log,
+        "message": (
+            "Call initiated — the system will automatically check for results "
+            "and create a calendar event when the patient confirms."
+            if call_initiated
+            else "Workflow executed."
+        ),
     }
 
 
@@ -370,10 +695,19 @@ async def lab_event(body: LabEventRequest):
             lab_results=body.metadata.get("lab_results", []),
         )
 
+        call_initiated = any(step.get("conversation_id") for step in execution_log)
         has_error = any(s.get("status") == "error" for s in execution_log)
-        final_status = "failed" if has_error else "completed"
+        if has_error:
+            final_status = "failed"
+        elif call_initiated:
+            final_status = "running"
+        else:
+            final_status = "completed"
 
         db.update_call_log(log_id, {"status": final_status, "execution_log": execution_log})
+
+        if call_initiated:
+            asyncio.create_task(_auto_poll_call_result(log_id))
 
         matched_results.append({
             "workflow_id": wf["id"],

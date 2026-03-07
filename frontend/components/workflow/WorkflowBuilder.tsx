@@ -41,6 +41,7 @@ import {
 } from '@/services/api';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
+import Image from 'next/image';
 import { ArrowUpRight, Undo2, Redo2, MousePointer2, Hand } from 'lucide-react';
 import dagre from 'dagre';
 import { CmdHoverContext } from './CmdHoverContext';
@@ -637,7 +638,8 @@ function FlowContent() {
       {/* ── Toolbar ──────────────────────────────────────────────────────── */}
       <header className="h-12 shrink-0 flex items-center justify-between px-4 border-b border-border bg-card">
         <div className="flex items-center gap-2">
-          <Link href="/dashboard" className="font-serif text-2xl tracking-tight text-foreground">
+          <Link href="/dashboard" className="flex items-center gap-2 font-serif text-2xl tracking-tight text-foreground">
+            <Image src="/assets/Clarus.png" alt="Clarus" width={32} height={32} />
             Clarus
           </Link>
           <span className="text-muted-foreground text-sm">/</span>

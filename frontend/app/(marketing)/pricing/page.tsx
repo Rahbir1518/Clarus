@@ -88,10 +88,6 @@ const faqs = [
     a: "Yes. Pay annually and get 2 months free on any plan. Contact us for annual billing setup.",
   },
   {
-    q: "What about HIPAA compliance?",
-    a: "All plans include encrypted data in transit and at rest. Enterprise plans include a signed BAA, dedicated compliance support, and full audit trail access.",
-  },
-  {
     q: "Do you offer a free trial?",
     a: "We offer a 14-day free trial on the Pro plan. No credit card required to start.",
   },
@@ -236,10 +232,9 @@ function PricingContent() {
                 <span className="text-sage-400">large organizations.</span>
               </h2>
               <p className="mt-6 max-w-lg text-base leading-relaxed text-muted-foreground">
-                Unlimited calls, negotiated rates, signed BAA for HIPAA
-                compliance, dedicated support, custom integrations, and SLA
-                guarantees. Built for hospital networks and multi-clinic
-                operations.
+                Unlimited calls, negotiated rates, dedicated support, custom
+                integrations, and SLA guarantees. Built for hospital networks
+                and multi-clinic operations.
               </p>
               <Link
                 href="/contact"
@@ -252,7 +247,6 @@ function PricingContent() {
             <div className="space-y-0">
               {[
                 "Unlimited automated calls",
-                "Signed BAA for HIPAA compliance",
                 "Dedicated account manager",
                 "Custom EMR integrations",
                 "99.9% uptime SLA",

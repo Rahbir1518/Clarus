@@ -237,16 +237,6 @@ export default function ContactPage() {
                   deployment? Let us know in the form.
                 </p>
               </div>
-              <div className="h-px bg-border" />
-              <div>
-                <p className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">
-                  Compliance
-                </p>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  HIPAA &amp; PIPEDA compliant. TLS 1.2+ in transit. AES-256 at
-                  rest.
-                </p>
-              </div>
             </div>
           </div>
         </div>
