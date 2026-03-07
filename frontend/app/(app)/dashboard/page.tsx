@@ -64,6 +64,7 @@ export default function DashboardPage() {
   const doctorId = user?.sub;
 
   const fetchPatients = useCallback(async () => {
+    if (!doctorId) return;
     setLoadingPatients(true);
     try {
       const data = await listPatients(doctorId);
@@ -76,6 +77,7 @@ export default function DashboardPage() {
   }, [doctorId]);
 
   const fetchDashboardData = useCallback(async () => {
+    if (!doctorId) return;
     setLoadingData(true);
     try {
       const [wfData, clData] = await Promise.all([
