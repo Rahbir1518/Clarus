@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Clarus",
-  description: "Clarus Application",
+  title: "Clarus — Clinical Workflow Automation",
+  description: "Intelligent clinical workflow automation platform for healthcare providers",
 };
 
 export default function RootLayout({
