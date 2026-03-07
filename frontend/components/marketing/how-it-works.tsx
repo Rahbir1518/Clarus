@@ -9,7 +9,7 @@ const links = [
 
 export function HowItWorks() {
   return (
-    <section className="bg-[#F5F2EE] py-28 md:py-36">
+    <section className="bg-sage-50 py-28 md:py-36">
       <div className="mx-auto max-w-7xl px-6">
         <div className="grid gap-12 md:grid-cols-[160px_1fr_1fr] md:gap-8">
           {/* Label */}

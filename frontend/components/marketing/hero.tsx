@@ -14,9 +14,9 @@ export function Hero() {
           Automate patient
           <br />
           follow-up{" "}
-          <span className="text-primary/40">before</span>
+          <span className="text-sage-400">before</span>
           <br />
-          <span className="text-primary/40">the first missed call.</span>
+          <span className="text-sage-400">the first missed call.</span>
         </h1>
 
         {/* Separator */}
