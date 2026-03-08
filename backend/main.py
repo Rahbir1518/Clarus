@@ -23,6 +23,7 @@ app.add_middleware(
         "http://127.0.0.1:3000",
         "http://127.0.0.1:3001",
         "https://frontend-amber-xi-26.vercel.app",
+        "https://useclarus.vercel.app",
         "https://*.vercel.app",
     ],
     allow_credentials=True,
