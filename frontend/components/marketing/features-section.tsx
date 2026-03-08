@@ -9,9 +9,9 @@ export function FeaturesSection() {
               Smart Triggers
             </h3>
             <p className="mt-4 max-w-md text-base leading-relaxed text-muted-foreground">
-              Configure event-driven automations tied to lab reports. Set
-              conditions — all results, abnormal only, or custom filters —
-              scoped per doctor or clinic-wide.
+              Configure event-driven automations tied to clinical events — lab
+              results, missed appointments, expiring prescriptions, and more.
+              Set conditions and filters scoped per doctor or clinic-wide.
             </p>
           </div>
           <div className="flex items-center justify-end">
@@ -68,21 +68,22 @@ export function FeaturesSection() {
               Automated Calls
             </h3>
             <p className="mt-4 max-w-md text-base leading-relaxed text-muted-foreground">
-              Outbound voice calls with TTS scripts personalized to each doctor.
-              Patients understand what&apos;s needed and can act on the spot.
+              AI-powered voice calls that speak naturally with patients.
+              The agent explains why the doctor is reaching out and schedules
+              appointments conversationally.
             </p>
             <ul className="mt-6 space-y-3 text-sm text-muted-foreground">
               <li className="flex items-start gap-2">
                 <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-foreground/30" />
-                Personalized scripts per doctor and clinic
+                Natural conversation — no rigid phone menus
               </li>
               <li className="flex items-start gap-2">
                 <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-foreground/30" />
-                Configurable retry logic with 30-min intervals
+                Personalized context per doctor and patient
               </li>
               <li className="flex items-start gap-2">
                 <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-foreground/30" />
-                Press 1 to book, press 2 for options, press 9 to opt out
+                Appointments booked directly to Google Calendar
               </li>
             </ul>
           </div>

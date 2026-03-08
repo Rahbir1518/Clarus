@@ -22,7 +22,7 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "Clarus — Intelligent Clinical Workflow Automation",
   description:
-    "Automate patient follow-up workflows with event-driven triggers. When a lab report arrives, Clarus contacts patients and books appointments automatically.",
+    "Automate clinical workflows with event-driven triggers. When a clinical event occurs, Clarus contacts patients, books appointments, and coordinates follow-ups automatically.",
 };
 
 export default function RootLayout({

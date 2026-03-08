@@ -20,12 +20,13 @@ export function HowItWorks() {
           {/* Main content */}
           <div>
             <h2 className="font-serif text-4xl leading-tight tracking-tight md:text-5xl">
-              We automate the workflow between lab results and patient action.
+              We automate the workflow between clinical events and patient action.
             </h2>
             <p className="mt-6 max-w-lg text-base leading-relaxed text-muted-foreground">
-              When a blood report arrives, Clarus fires a trigger, calls the
-              patient with a personalized script, and books a follow-up — all
-              within 60 seconds, without your staff doing a thing.
+              When a clinical event occurs — a lab result, a missed appointment,
+              an expiring prescription — Clarus can fire a trigger, call the
+              patient, and books a follow-up — all within 60 seconds, without
+              your staff doing a thing.
             </p>
           </div>
 

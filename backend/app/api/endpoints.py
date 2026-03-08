@@ -401,7 +401,8 @@ def _resolve_date(raw: str) -> str:
       - Month + day: "March 12" → "2026-03-12"
       - Empty/unknown → "" (unchanged)
     """
-    from datetime import date, timedelta
+    from datetime import date, datetime, timedelta
+    from zoneinfo import ZoneInfo
     import re
 
     if not raw or not raw.strip():
@@ -413,7 +414,7 @@ def _resolve_date(raw: str) -> str:
     if re.match(r"^\d{4}-\d{2}-\d{2}$", raw):
         return raw
 
-    today = date.today()
+    today = datetime.now(ZoneInfo("America/Toronto")).date()
 
     # "tomorrow"
     if raw.lower() == "tomorrow":

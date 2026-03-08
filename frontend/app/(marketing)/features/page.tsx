@@ -6,13 +6,13 @@ const userStories = [
     id: "US-01",
     persona: "Doctor",
     story:
-      "Create a trigger that fires when a blood report is received, so the patient is automatically contacted.",
+      "Create a workflow that fires when a clinical event occurs, so the patient is automatically contacted.",
   },
   {
     id: "US-02",
     persona: "Doctor",
     story:
-      "Configure which report types activate the trigger — all results, abnormal only, or custom filters.",
+      "Configure which events activate the workflow — lab results, missed appointments, expiring prescriptions, or custom filters.",
   },
   {
     id: "US-03",
@@ -24,19 +24,19 @@ const userStories = [
     id: "US-04",
     persona: "Admin",
     story:
-      "Pause or deactivate a trigger at any time to manage the system during unusual circumstances.",
+      "Pause or deactivate a workflow at any time to manage the system during unusual circumstances.",
   },
   {
     id: "US-05",
     persona: "Patient",
     story:
-      "Receive a call explaining that my blood report is ready and that my doctor recommends a follow-up.",
+      "Receive a call from an AI agent explaining why my doctor is reaching out and what the next steps are.",
   },
   {
     id: "US-06",
     persona: "Patient",
     story:
-      "Book an appointment directly on the call, so I don't need to call back separately.",
+      "Schedule an appointment during the call by speaking naturally with the AI agent.",
   },
 ];
 
@@ -44,22 +44,22 @@ const integrations = [
   {
     system: "EMR / Lab System",
     type: "Webhook or HL7 FHIR",
-    detail: "Trigger on DiagnosticReport resource creation",
+    detail: "Trigger workflows on clinical events like lab results or referrals",
   },
   {
-    system: "Telephony Provider",
-    type: "REST API (Twilio)",
-    detail: "Outbound call and IVR DTMF handling",
+    system: "Voice AI (ElevenLabs)",
+    type: "Conversational AI",
+    detail: "AI-powered outbound calls with natural patient conversations",
   },
   {
-    system: "Clinic Calendar",
+    system: "Telephony (Twilio)",
     type: "REST API",
-    detail: "Read available slots, write confirmed bookings",
+    detail: "Outbound call infrastructure and SMS messaging",
   },
   {
-    system: "Notification Service",
-    type: "Internal",
-    detail: "Flag unreachable patients to staff dashboard",
+    system: "Google Calendar",
+    type: "REST API",
+    detail: "Automatic appointment creation on the doctor's calendar",
   },
 ];
 
@@ -74,11 +74,11 @@ export default function FeaturesPage() {
           </p>
           <h1 className="mt-6 max-w-4xl font-serif text-5xl leading-tight tracking-tight md:text-7xl">
             Everything you need to{" "}
-            <span className="text-sage-400">automate</span> clinical follow-ups.
+            <span className="text-sage-400">automate</span> clinical workflows.
           </h1>
           <div className="mt-10 h-px w-full max-w-md bg-border" />
           <p className="mt-8 max-w-lg text-base leading-relaxed text-muted-foreground">
-            Blood report received. Patient called. Appointment booked. All
+            Clinical event triggered. Patient called. Appointment booked. All
             within 60 seconds — without your staff doing a thing.
           </p>
         </div>
@@ -100,7 +100,7 @@ export default function FeaturesPage() {
               <ul className="mt-6 space-y-3 text-sm text-muted-foreground">
                 <li className="flex items-start gap-2">
                   <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-foreground/30" />
-                  Support for blood/lab report received events
+                  Support for lab results, appointments, prescriptions, and more
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-foreground/30" />
@@ -183,26 +183,26 @@ export default function FeaturesPage() {
                 Automated <span className="text-primary">Voice Calls</span>
               </h3>
               <p className="mt-4 max-w-md text-base leading-relaxed text-muted-foreground">
-                Outbound voice calls with TTS scripts personalized per doctor.
-                Patients hear what&apos;s needed and can act immediately — no
-                callbacks required.
+                AI-powered outbound voice calls that speak naturally with
+                patients. The AI agent explains why the doctor is reaching out
+                and collects appointment preferences conversationally.
               </p>
               <ul className="mt-6 space-y-3 text-sm text-muted-foreground">
                 <li className="flex items-start gap-2">
                   <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-foreground/30" />
-                  Press 1 to confirm appointment, press 2 for other times
+                  Natural conversation — no rigid phone menus or key presses
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-foreground/30" />
-                  Configurable retry logic — up to 2 retries at 30-min intervals
+                  Personalized context per doctor, patient, and clinic
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-foreground/30" />
-                  Unreachable patients flagged and staff notified
+                  Collects appointment preferences and confirms scheduling
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-foreground/30" />
-                  Press 9 to opt out of future automated calls
+                  Full transcript and call outcome logged automatically
                 </li>
               </ul>
             </div>
@@ -215,22 +215,22 @@ export default function FeaturesPage() {
                 Instant <span className="text-primary">Appointment</span> Booking
               </h3>
               <p className="mt-4 max-w-md text-base leading-relaxed text-muted-foreground">
-                Patients book follow-ups directly during the automated call.
-                Slots are queried in real time, held during the call, and
-                confirmed within seconds.
+                The AI agent offers available appointment slots during the call.
+                Once the patient confirms, the appointment is automatically
+                created on the doctor&apos;s Google Calendar.
               </p>
               <ul className="mt-6 space-y-3 text-sm text-muted-foreground">
                 <li className="flex items-start gap-2">
                   <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-foreground/30" />
-                  Real-time calendar availability lookup
+                  AI agent presents available time slots conversationally
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-foreground/30" />
-                  Slot held for 2 minutes during the call
+                  Confirmed appointments added to Google Calendar automatically
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-foreground/30" />
-                  Booking reflected in clinic system within 30 seconds
+                  Patient and doctor notified with appointment details
                 </li>
               </ul>
             </div>

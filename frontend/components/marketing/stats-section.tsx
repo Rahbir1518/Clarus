@@ -24,7 +24,7 @@ export function StatsSection() {
               &lt; 5 min
             </p>
             <h2 className="mt-4 font-serif text-3xl tracking-tight md:text-4xl">
-              From report received to patient contacted
+              From trigger fired to patient contacted
             </h2>
             <p className="mt-3 max-w-md text-muted-foreground">
               The industry average is 2–4 hours. Most clinics using Clarus see

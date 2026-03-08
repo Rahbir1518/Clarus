@@ -25,8 +25,8 @@ const team = [
 const milestones = [
   { phase: "Discovery", detail: "PRD approved, architecture finalized" },
   { phase: "Core Engine", detail: "Trigger engine and event bus operational" },
-  { phase: "Call Integration", detail: "Outbound call and IVR flow functional" },
-  { phase: "Booking Integration", detail: "Calendar read/write with confirmation" },
+  { phase: "Call Integration", detail: "AI-powered outbound calls via ElevenLabs" },
+  { phase: "Booking Integration", detail: "Google Calendar appointment creation" },
   { phase: "Admin UI", detail: "Trigger configuration and audit log complete" },
   { phase: "QA & Testing", detail: "UAT, load testing" },
   { phase: "Beta Launch", detail: "Pilot with initial clinic partners" },
@@ -51,9 +51,10 @@ export default function AboutPage() {
             Clarus is an intelligent clinical workflow automation platform that
             enables healthcare providers to configure event-driven triggers tied
             to patient records and medical data. When a predefined condition is
-            met — such as a lab report being received — the system automatically
-            initiates a downstream action, like placing an automated phone call
-            to the patient.
+            met — such as a lab result arriving, a missed appointment, or an
+            expiring prescription — the system automatically initiates
+            downstream actions, like placing an AI-powered phone call to the
+            patient and booking a follow-up appointment.
           </p>
         </div>
       </section>
@@ -71,15 +72,17 @@ export default function AboutPage() {
               <span className="text-primary">slow</span>, inconsistent, and costly.
               </h2>
               <p className="mt-6 max-w-lg text-base leading-relaxed text-muted-foreground">
-                Today, when a blood report arrives at a clinic, the follow-up
-                workflow relies entirely on manual effort. Staff review incoming
-                results, identify which patients need follow-ups, and call each
-                patient individually — often during the busiest clinic hours.
+                Today, when a clinical event occurs — a lab result arrives, a
+                patient misses an appointment, a prescription is expiring — the
+                follow-up workflow relies entirely on manual effort. Staff
+                review each case, identify which patients need action, and
+                contact them individually — often during the busiest clinic
+                hours.
               </p>
             </div>
             <div className="space-y-0">
               {[
-                "Staff must manually review every incoming result",
+                "Staff must manually review every incoming event",
                 "Patients are identified one by one for follow-up",
                 "Calls happen during peak hours, causing delays",
                 "Missed follow-ups lead to no-shows and worse outcomes",
@@ -106,12 +109,12 @@ export default function AboutPage() {
                 &lt; 60s
               </p>
               <h2 className="mt-4 font-serif text-3xl tracking-tight md:text-4xl">
-                From report received to patient contacted
+                From trigger fired to patient contacted
               </h2>
               <p className="mt-3 max-w-md text-muted-foreground">
-                Automate the notification-and-booking workflow so that the moment
-                a qualifying report arrives, the patient is contacted — no manual
-                intervention required.
+                Automate the entire follow-up workflow so that the moment a
+                clinical event occurs, the patient is contacted by an AI agent
+                — no manual intervention required.
               </p>
             </div>
             <div className="space-y-5">
