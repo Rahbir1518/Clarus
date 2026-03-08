@@ -483,7 +483,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Right: Beacon Insights + RAF + stepper */}
+          {/* Right: Clarus Insights + RAF + stepper */}
           <div className="space-y-4">
             <div className="rounded-xl border border-primary/20 bg-card p-4">
               <div className="mb-4 flex items-center gap-2">
@@ -491,7 +491,7 @@ export default function DashboardPage() {
                   <Lightbulb className="size-4 text-primary" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-semibold">Beacon AI Insights</h3>
+                  <h3 className="text-sm font-semibold">Clarus Insights</h3>
                   <p className="text-[11px] text-muted-foreground">{reviewNeeded.length} gap{reviewNeeded.length !== 1 ? "s" : ""} identified</p>
                 </div>
               </div>

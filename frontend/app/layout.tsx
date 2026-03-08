@@ -20,9 +20,17 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Clarus — Intelligent Clinical Workflow Automation",
+  title: "Clarus",
   description:
     "Automate clinical workflows with event-driven triggers. When a clinical event occurs, Clarus contacts patients, books appointments, and coordinates follow-ups automatically.",
+  icons: {
+    icon: [
+      { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+      { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
+    ],
+    apple: "/apple-touch-icon.png",
+  },
+  manifest: "/site.webmanifest",
 };
 
 export default function RootLayout({

@@ -769,14 +769,14 @@ export default function PatientDetailPage({
 
         {/* Right column — Insights */}
         <div className="space-y-4">
-          {/* Beacon Insights */}
+          {/* Clarus Insights */}
           <div className="rounded-xl border border-primary/20 bg-card p-4">
             <div className="mb-4 flex items-center gap-2">
               <div className="flex size-7 items-center justify-center rounded-lg bg-primary/10">
                 <Lightbulb className="size-4 text-primary" />
               </div>
               <div>
-                <h3 className="text-sm font-semibold">Beacon AI Insights</h3>
+                <h3 className="text-sm font-semibold">Clarus Insights</h3>
                 <p className="text-[11px] text-muted-foreground">
                   {reviewNeeded.length} gap{reviewNeeded.length !== 1 ? "s" : ""} identified
                 </p>
