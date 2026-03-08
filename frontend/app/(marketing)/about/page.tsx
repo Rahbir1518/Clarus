@@ -28,7 +28,7 @@ const milestones = [
   { phase: "Call Integration", detail: "Outbound call and IVR flow functional" },
   { phase: "Booking Integration", detail: "Calendar read/write with confirmation" },
   { phase: "Admin UI", detail: "Trigger configuration and audit log complete" },
-  { phase: "QA & Compliance", detail: "HIPAA review, UAT, load testing" },
+  { phase: "QA & Testing", detail: "UAT, load testing" },
   { phase: "Beta Launch", detail: "Pilot with initial clinic partners" },
   { phase: "General Availability", detail: "Full public launch" },
 ];
@@ -44,7 +44,7 @@ export default function AboutPage() {
           </p>
           <h1 className="mt-6 max-w-4xl font-serif text-5xl leading-tight tracking-tight md:text-7xl">
             We believe no patient should wait for a follow-up that{" "}
-            <span className="text-primary/40">never comes.</span>
+            <span className="text-sage-400">never comes.</span>
           </h1>
           <div className="mt-10 h-px w-full max-w-md bg-border" />
           <p className="mt-8 max-w-lg text-base leading-relaxed text-muted-foreground">
@@ -59,7 +59,7 @@ export default function AboutPage() {
       </section>
 
       {/* The Problem */}
-      <section className="bg-[#F5F2EE] py-28 md:py-36">
+      <section className="bg-sage-50 py-28 md:py-36">
         <div className="mx-auto max-w-7xl px-6">
           <div className="grid gap-12 md:grid-cols-[160px_1fr_1fr] md:gap-8">
             <p className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">
@@ -155,7 +155,7 @@ export default function AboutPage() {
             Who We Serve
           </p>
           <h2 className="mt-6 font-serif text-4xl tracking-tight md:text-5xl">
-            Built for <span className="text-primary/40">every role</span> in the clinic.
+            Built for <span className="text-sage-400">every role</span> in the clinic.
           </h2>
           <div className="mt-14 grid gap-6 md:grid-cols-3">
             {team.map((person) => (
@@ -164,7 +164,7 @@ export default function AboutPage() {
                 className="rounded-2xl border border-border p-8"
               >
                 <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-full bg-gradient-to-br from-primary/20 to-primary/5" />
+                  <div className="h-10 w-10 rounded-full bg-gradient-to-br from-sage/40 to-sage-100" />
                   <div>
                     <p className="text-sm font-semibold">{person.name}</p>
                     <p className="text-xs text-muted-foreground">
@@ -215,7 +215,7 @@ export default function AboutPage() {
       <section className="py-28 md:py-40">
         <div className="mx-auto max-w-7xl px-6">
           <h2 className="max-w-3xl font-serif text-5xl leading-tight tracking-tight md:text-7xl">
-            Ready to <span className="text-primary/40">automate</span> your clinic?
+            Ready to <span className="text-sage-400">automate</span> your clinic?
           </h2>
           <div className="mt-10 h-px w-full max-w-md bg-border" />
           <div className="mt-8 flex gap-6">

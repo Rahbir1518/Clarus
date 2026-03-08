@@ -226,3 +226,126 @@ def update_medication(medication_id: str, payload: dict) -> dict:
 def delete_medication(medication_id: str) -> None:
     sb = get_supabase()
     sb.table("patient_medications").delete().eq("id", medication_id).execute()
+
+
+# ---------------------------------------------------------------------------
+# Notification helpers
+# ---------------------------------------------------------------------------
+
+def create_notification(payload: dict) -> dict:
+    sb = get_supabase()
+    return sb.table("notifications").insert(payload).execute().data[0]
+
+
+def list_notifications(patient_id: str | None = None) -> list[dict]:
+    sb = get_supabase()
+    q = sb.table("notifications").select("*")
+    if patient_id:
+        q = q.eq("patient_id", patient_id)
+    return q.order("created_at", desc=True).execute().data
+
+
+# ---------------------------------------------------------------------------
+# Lab order helpers
+# ---------------------------------------------------------------------------
+
+def create_lab_order(payload: dict) -> dict:
+    sb = get_supabase()
+    return sb.table("lab_orders").insert(payload).execute().data[0]
+
+
+def list_lab_orders(patient_id: str | None = None) -> list[dict]:
+    sb = get_supabase()
+    q = sb.table("lab_orders").select("*")
+    if patient_id:
+        q = q.eq("patient_id", patient_id)
+    return q.order("created_at", desc=True).execute().data
+
+
+# ---------------------------------------------------------------------------
+# Referral helpers
+# ---------------------------------------------------------------------------
+
+def create_referral(payload: dict) -> dict:
+    sb = get_supabase()
+    return sb.table("referrals").insert(payload).execute().data[0]
+
+
+def list_referrals(patient_id: str | None = None) -> list[dict]:
+    sb = get_supabase()
+    q = sb.table("referrals").select("*")
+    if patient_id:
+        q = q.eq("patient_id", patient_id)
+    return q.order("created_at", desc=True).execute().data
+
+
+# ---------------------------------------------------------------------------
+# Staff assignment helpers
+# ---------------------------------------------------------------------------
+
+def create_staff_assignment(payload: dict) -> dict:
+    sb = get_supabase()
+    return sb.table("staff_assignments").insert(payload).execute().data[0]
+
+
+def list_staff_assignments(patient_id: str | None = None, staff_id: str | None = None) -> list[dict]:
+    sb = get_supabase()
+    q = sb.table("staff_assignments").select("*")
+    if patient_id:
+        q = q.eq("patient_id", patient_id)
+    if staff_id:
+        q = q.eq("staff_id", staff_id)
+    return q.order("created_at", desc=True).execute().data
+
+
+# ---------------------------------------------------------------------------
+# Report helpers
+# ---------------------------------------------------------------------------
+
+def create_report(payload: dict) -> dict:
+    sb = get_supabase()
+    return sb.table("reports").insert(payload).execute().data[0]
+
+
+def get_report(report_id: str) -> dict | None:
+    sb = get_supabase()
+    rows = sb.table("reports").select("*").eq("id", report_id).execute().data
+    return rows[0] if rows else None
+
+
+def list_reports(patient_id: str | None = None, workflow_id: str | None = None) -> list[dict]:
+    sb = get_supabase()
+    q = sb.table("reports").select("*")
+    if patient_id:
+        q = q.eq("patient_id", patient_id)
+    if workflow_id:
+        q = q.eq("workflow_id", workflow_id)
+    return q.order("created_at", desc=True).execute().data
+
+
+# ---------------------------------------------------------------------------
+# PDF document helpers
+# ---------------------------------------------------------------------------
+
+def create_pdf_document(payload: dict) -> dict:
+    sb = get_supabase()
+    return sb.table("pdf_documents").insert(payload).execute().data[0]
+
+
+def get_pdf_document(doc_id: str) -> dict | None:
+    sb = get_supabase()
+    rows = sb.table("pdf_documents").select("*").eq("id", doc_id).execute().data
+    return rows[0] if rows else None
+
+
+def list_pdf_documents(patient_id: str | None = None) -> list[dict]:
+    sb = get_supabase()
+    q = sb.table("pdf_documents").select("*")
+    if patient_id:
+        q = q.eq("patient_id", patient_id)
+    return q.order("created_at", desc=True).execute().data
+
+
+def delete_pdf_document(doc_id: str) -> None:
+    sb = get_supabase()
+    sb.table("pdf_documents").delete().eq("id", doc_id).execute()

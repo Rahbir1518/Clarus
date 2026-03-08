@@ -10,7 +10,7 @@ export function SocialProof() {
           </p>
         </blockquote>
         <div className="mt-6 flex items-center justify-center gap-3">
-          <div className="h-10 w-10 rounded-full bg-gradient-to-br from-primary/20 to-primary/5" />
+          <div className="h-10 w-10 rounded-full bg-gradient-to-br from-sage/40 to-sage-100" />
           <div className="text-left">
             <p className="text-sm font-semibold">Dr. Priya Nair</p>
             <p className="text-xs text-muted-foreground">

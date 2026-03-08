@@ -88,10 +88,6 @@ const faqs = [
     a: "Yes. Pay annually and get 2 months free on any plan. Contact us for annual billing setup.",
   },
   {
-    q: "What about HIPAA compliance?",
-    a: "All plans include encrypted data in transit and at rest. Enterprise plans include a signed BAA, dedicated compliance support, and full audit trail access.",
-  },
-  {
     q: "Do you offer a free trial?",
     a: "We offer a 14-day free trial on the Pro plan. No credit card required to start.",
   },
@@ -145,7 +141,7 @@ function PricingContent() {
           </p>
           <h1 className="mt-6 max-w-4xl font-serif text-5xl leading-tight tracking-tight md:text-7xl">
             Simple pricing that{" "}
-            <span className="text-primary/40">scales</span> with your clinic.
+            <span className="text-sage-400">scales</span> with your clinic.
           </h1>
           <div className="mt-10 h-px w-full max-w-md bg-border" />
           <p className="mt-8 max-w-lg text-base leading-relaxed text-muted-foreground">
@@ -164,12 +160,12 @@ function PricingContent() {
                 key={tier.name}
                 className={`flex flex-col rounded-2xl border p-8 transition-transform duration-200 hover:scale-[1.03] ${
                   tier.highlight
-                    ? "border-primary/30 bg-primary/[0.02]"
+                    ? "border-sage bg-sage-50/50"
                     : "border-border"
                 }`}
               >
                 {tier.highlight && (
-                  <span className="mb-4 w-fit rounded-full bg-primary/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-primary">
+                  <span className="mb-4 w-fit rounded-full bg-sage-100 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-sage-600">
                     Most Popular
                   </span>
                 )}
@@ -202,7 +198,7 @@ function PricingContent() {
                       key={feature}
                       className="flex items-start gap-2 text-sm text-muted-foreground"
                     >
-                      <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary/60" />
+                      <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sage-500" />
                       {feature}
                     </li>
                   ))}
@@ -224,7 +220,7 @@ function PricingContent() {
       </section>
 
       {/* Enterprise */}
-      <section className="bg-[#F5F2EE] py-28 md:py-36">
+      <section className="bg-sage-50 py-28 md:py-36">
         <div className="mx-auto max-w-7xl px-6">
           <div className="grid gap-12 md:grid-cols-[160px_1fr_1fr] md:gap-8">
             <p className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">
@@ -233,13 +229,12 @@ function PricingContent() {
             <div>
               <h2 className="font-serif text-4xl leading-tight tracking-tight md:text-5xl">
                 Custom plans for{" "}
-                <span className="text-primary/40">large organizations.</span>
+                <span className="text-sage-400">large organizations.</span>
               </h2>
               <p className="mt-6 max-w-lg text-base leading-relaxed text-muted-foreground">
-                Unlimited calls, negotiated rates, signed BAA for HIPAA
-                compliance, dedicated support, custom integrations, and SLA
-                guarantees. Built for hospital networks and multi-clinic
-                operations.
+                Unlimited calls, negotiated rates, dedicated support, custom
+                integrations, and SLA guarantees. Built for hospital networks
+                and multi-clinic operations.
               </p>
               <Link
                 href="/contact"
@@ -252,7 +247,6 @@ function PricingContent() {
             <div className="space-y-0">
               {[
                 "Unlimited automated calls",
-                "Signed BAA for HIPAA compliance",
                 "Dedicated account manager",
                 "Custom EMR integrations",
                 "99.9% uptime SLA",
@@ -262,7 +256,7 @@ function PricingContent() {
                   key={item}
                   className="flex items-center gap-3 border-b border-foreground/10 py-5 text-sm text-foreground"
                 >
-                  <Check className="h-3.5 w-3.5 shrink-0 text-primary/60" />
+                  <Check className="h-3.5 w-3.5 shrink-0 text-sage-500" />
                   {item}
                 </div>
               ))}
@@ -297,7 +291,7 @@ function PricingContent() {
       <section className="py-28 md:py-40">
         <div className="mx-auto max-w-7xl px-6">
           <h2 className="max-w-3xl font-serif text-5xl leading-tight tracking-tight md:text-7xl">
-            Start <span className="text-primary/40">automating</span> today.
+            Start <span className="text-sage-400">automating</span> today.
           </h2>
           <div className="mt-10 h-px w-full max-w-md bg-border" />
           <p className="mt-8 max-w-sm text-base leading-relaxed text-muted-foreground">

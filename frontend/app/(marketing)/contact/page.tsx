@@ -41,7 +41,7 @@ export default function ContactPage() {
           </p>
           <h1 className="mt-6 max-w-4xl font-serif text-5xl leading-tight tracking-tight md:text-7xl">
             Let&apos;s talk about{" "}
-            <span className="text-primary/40">automating</span> your clinic.
+            <span className="text-sage-400">automating</span> your clinic.
           </h1>
           <div className="mt-10 h-px w-full max-w-md bg-border" />
           <p className="mt-8 max-w-lg text-base leading-relaxed text-muted-foreground">
@@ -235,16 +235,6 @@ export default function ContactPage() {
                 <p className="mt-2 text-sm text-muted-foreground">
                   Need a custom plan with BAA, dedicated support, or on-premise
                   deployment? Let us know in the form.
-                </p>
-              </div>
-              <div className="h-px bg-border" />
-              <div>
-                <p className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">
-                  Compliance
-                </p>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  HIPAA &amp; PIPEDA compliant. TLS 1.2+ in transit. AES-256 at
-                  rest.
                 </p>
               </div>
             </div>

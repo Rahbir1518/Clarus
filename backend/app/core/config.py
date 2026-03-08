@@ -22,10 +22,13 @@ class Settings(BaseSettings):
     elevenlabs_agent_id: str = ""
     elevenlabs_phone_number_id: str = ""
 
-    # Auth0 (for fetching Google tokens via Management API)
+    # Auth0
     auth0_domain: str = ""
-    auth0_client_id: str = ""
-    auth0_client_secret: str = ""
+    auth0_client_id: str = ""          # Regular web app (used for login)
+    auth0_client_secret: str = ""      # Regular web app
+    # Machine-to-Machine app (for Management API — fetching Google tokens)
+    auth0_m2m_client_id: str = ""
+    auth0_m2m_client_secret: str = ""
 
     # App
     app_base_url: str = "http://localhost:8000"

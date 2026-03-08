@@ -40,6 +40,7 @@ _mgmt_token_cache: dict[str, Any] = {}
 async def _get_management_api_token() -> str:
     """
     Obtain an Auth0 Management API access token using client_credentials.
+    Uses the M2M (Machine-to-Machine) app credentials.
     Caches the token until it expires.
     """
     import time
@@ -48,11 +49,22 @@ async def _get_management_api_token() -> str:
     if cached and _mgmt_token_cache.get("expires_at", 0) > time.time():
         return cached
 
+    # Use M2M credentials; fall back to regular credentials for backwards compat
+    client_id = settings.auth0_m2m_client_id or settings.auth0_client_id
+    client_secret = settings.auth0_m2m_client_secret or settings.auth0_client_secret
+
+    if not client_id or not client_secret:
+        raise RuntimeError(
+            "AUTH0_M2M_CLIENT_ID and AUTH0_M2M_CLIENT_SECRET must be set in .env. "
+            "Create a Machine-to-Machine application in Auth0 and authorize it "
+            "for the Management API with scopes: read:users, read:user_idp_tokens."
+        )
+
     url = f"https://{settings.auth0_domain}/oauth/token"
     payload = {
         "grant_type": "client_credentials",
-        "client_id": settings.auth0_client_id,
-        "client_secret": settings.auth0_client_secret,
+        "client_id": client_id,
+        "client_secret": client_secret,
         "audience": f"https://{settings.auth0_domain}/api/v2/",
     }
 

@@ -37,6 +37,7 @@ export default function CallsPage() {
   const [filterStatus, setFilterStatus] = useState<string>("all");
 
   const fetchCallLogs = useCallback(async () => {
+    if (!doctorId) return;
     setLoading(true);
     try {
       const data = await listCallLogs(undefined, doctorId);

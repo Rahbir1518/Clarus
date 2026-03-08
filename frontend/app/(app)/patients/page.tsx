@@ -33,6 +33,7 @@ export default function PatientsPage() {
   const doctorId = user?.sub;
 
   const fetchPatients = useCallback(async () => {
+    if (!doctorId) return;
     setLoading(true);
     try {
       const data = await listPatients(doctorId);

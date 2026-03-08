@@ -74,7 +74,7 @@ export default function FeaturesPage() {
           </p>
           <h1 className="mt-6 max-w-4xl font-serif text-5xl leading-tight tracking-tight md:text-7xl">
             Everything you need to{" "}
-            <span className="text-primary/40">automate</span> clinical follow-ups.
+            <span className="text-sage-400">automate</span> clinical follow-ups.
           </h1>
           <div className="mt-10 h-px w-full max-w-md bg-border" />
           <p className="mt-8 max-w-lg text-base leading-relaxed text-muted-foreground">
@@ -116,7 +116,7 @@ export default function FeaturesPage() {
                 </li>
               </ul>
             </div>
-            <div className="flex items-center justify-center bg-[#F8F6F4] p-10 md:p-14">
+            <div className="flex items-center justify-center bg-sage-50 p-10 md:p-14">
               <div className="w-full max-w-xs space-y-3">
                 <div className="flex items-center gap-3">
                   <div className="h-3 w-3 rounded-full bg-primary/30" />
@@ -145,7 +145,7 @@ export default function FeaturesPage() {
 
           {/* Automated Calls */}
           <div className="grid overflow-hidden rounded-2xl border border-border md:grid-cols-2">
-            <div className="flex items-center justify-center bg-[#F8F6F4] p-10 md:p-14">
+            <div className="flex items-center justify-center bg-sage-50 p-10 md:p-14">
               <div className="w-full max-w-xs">
                 <div className="flex items-end gap-[3px]">
                   {[
@@ -234,7 +234,7 @@ export default function FeaturesPage() {
                 </li>
               </ul>
             </div>
-            <div className="flex items-center justify-center bg-[#F8F6F4] p-10 md:p-14">
+            <div className="flex items-center justify-center bg-sage-50 p-10 md:p-14">
               <div className="w-full max-w-xs space-y-3">
                 {[
                   { time: "9:00 AM", status: "Available" },
@@ -263,7 +263,7 @@ export default function FeaturesPage() {
 
           {/* Audit Log */}
           <div className="grid overflow-hidden rounded-2xl border border-border md:grid-cols-2">
-            <div className="flex items-center justify-center bg-[#F8F6F4] p-10 md:p-14">
+            <div className="flex items-center justify-center bg-sage-50 p-10 md:p-14">
               <div className="w-full max-w-xs space-y-2">
                 {[1, 2, 3, 4, 5].map((row) => (
                   <div key={row} className="flex items-center gap-3">
@@ -297,11 +297,7 @@ export default function FeaturesPage() {
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-foreground/30" />
-                  CSV export for compliance reviews
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-foreground/30" />
-                  All data access logged for audit trails
+                  CSV export for reporting
                 </li>
               </ul>
             </div>
@@ -310,7 +306,7 @@ export default function FeaturesPage() {
       </section>
 
       {/* User Stories */}
-      <section className="bg-[#F5F2EE] py-28 md:py-36">
+      <section className="bg-sage-50 py-28 md:py-36">
         <div className="mx-auto max-w-7xl px-6">
           <div className="grid gap-12 md:grid-cols-[160px_1fr] md:gap-8">
             <p className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">
@@ -345,7 +341,7 @@ export default function FeaturesPage() {
             Integrations
           </p>
           <h2 className="mt-6 font-serif text-4xl tracking-tight md:text-5xl">
-            Connects to your <span className="text-primary/40">existing stack.</span>
+            Connects to your <span className="text-sage-400">existing stack.</span>
           </h2>
           <div className="mt-14 grid gap-6 md:grid-cols-2">
             {integrations.map((int) => (
@@ -368,28 +364,11 @@ export default function FeaturesPage() {
         </div>
       </section>
 
-      {/* Compliance bar */}
-      <section className="border-y border-border py-12">
-        <div className="mx-auto max-w-7xl px-6">
-          <div className="flex flex-col items-start justify-between gap-6 md:flex-row md:items-center">
-            <p className="text-sm text-muted-foreground">
-              HIPAA &amp; PIPEDA compliant &nbsp;&middot;&nbsp; TLS 1.2+ in
-              transit &nbsp;&middot;&nbsp; AES-256 at rest &nbsp;&middot;&nbsp;
-              SOC 2 in progress
-            </p>
-            <p className="text-xs text-muted-foreground/60">
-              All patient data encrypted. All access logged for compliance
-              review.
-            </p>
-          </div>
-        </div>
-      </section>
-
       {/* CTA */}
       <section className="py-28 md:py-40">
         <div className="mx-auto max-w-7xl px-6">
           <h2 className="max-w-3xl font-serif text-5xl leading-tight tracking-tight md:text-7xl">
-            See it <span className="text-primary/40">in action.</span>
+            See it <span className="text-sage-400">in action.</span>
           </h2>
           <div className="mt-10 h-px w-full max-w-md bg-border" />
           <div className="mt-8 flex gap-6">

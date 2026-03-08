@@ -92,6 +92,18 @@ export default function PatientDetailPage({
   const [savingMedication, setSavingMedication] = useState(false);
   const [editingMedicationId, setEditingMedicationId] = useState<string | null>(null);
 
+  const [pdfImportResult, setPdfImportResult] = useState<any>(null);
+
+  useEffect(() => {
+    try {
+      const stored = sessionStorage.getItem("pdfImportResult");
+      if (stored) {
+        setPdfImportResult(JSON.parse(stored));
+        sessionStorage.removeItem("pdfImportResult");
+      }
+    } catch {}
+  }, []);
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
@@ -207,7 +219,7 @@ export default function PatientDetailPage({
       if (editingMedicationId) {
         await updateMedication(patientId, editingMedicationId, payload);
       } else {
-        await createMedication(patientId, payload);
+        await createMedication(patientId, payload as any);
       }
 
       setMedicationForm({ name: "", dosage: "", frequency: "", route: "", prescriber: "", start_date: "", end_date: "", status: "active", notes: "" });
@@ -375,6 +387,96 @@ export default function PatientDetailPage({
           </div>
         )}
       </div>
+
+      {/* PDF import result */}
+      {pdfImportResult && !pdfImportResult.error && (
+        <div className="rounded-xl border border-success/30 bg-success/5 p-5">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="size-4 text-success" />
+                <p className="text-sm font-semibold text-success">Patient created from PDF</p>
+              </div>
+              <button onClick={() => setPdfImportResult(null)} className="text-xs text-muted-foreground hover:text-foreground underline">Dismiss</button>
+            </div>
+
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              {pdfImportResult.patient?.name && (
+                <div className="rounded-lg bg-card border border-border p-3">
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Name</p>
+                  <p className="text-sm font-semibold">{pdfImportResult.patient.name}</p>
+                </div>
+              )}
+              {pdfImportResult.patient?.dob && (
+                <div className="rounded-lg bg-card border border-border p-3">
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Date of Birth</p>
+                  <p className="text-sm font-semibold">{pdfImportResult.patient.dob}</p>
+                </div>
+              )}
+              {pdfImportResult.patient?.mrn && (
+                <div className="rounded-lg bg-card border border-border p-3">
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">MRN</p>
+                  <p className="text-sm font-mono font-semibold">{pdfImportResult.patient.mrn}</p>
+                </div>
+              )}
+              {pdfImportResult.patient?.insurance && (
+                <div className="rounded-lg bg-card border border-border p-3">
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Insurance</p>
+                  <p className="text-sm font-semibold">{pdfImportResult.patient.insurance}</p>
+                </div>
+              )}
+            </div>
+
+            {pdfImportResult.created_medications > 0 && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Pill className="size-3.5" />
+                <span>{pdfImportResult.created_medications} medication{pdfImportResult.created_medications !== 1 ? "s" : ""} added from PDF</span>
+              </div>
+            )}
+
+            {pdfImportResult.extracted?.lab_results?.length > 0 && (
+              <div>
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2">
+                  Extracted Lab Results ({pdfImportResult.extracted.lab_results.length})
+                </p>
+                <div className="overflow-x-auto rounded-lg border border-border bg-card">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th className="text-left px-3 py-2 font-semibold">Test</th>
+                        <th className="text-left px-3 py-2 font-semibold">Value</th>
+                        <th className="text-left px-3 py-2 font-semibold">Unit</th>
+                        <th className="text-left px-3 py-2 font-semibold">Ref Range</th>
+                        <th className="text-left px-3 py-2 font-semibold">Flag</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pdfImportResult.extracted.lab_results.map((r: any, i: number) => (
+                        <tr key={i} className="border-b border-border/30 last:border-0">
+                          <td className="px-3 py-1.5">{r.test_name}</td>
+                          <td className="px-3 py-1.5 font-mono">{r.value}</td>
+                          <td className="px-3 py-1.5 text-muted-foreground">{r.unit}</td>
+                          <td className="px-3 py-1.5 text-muted-foreground">{r.reference_range}</td>
+                          <td className="px-3 py-1.5">
+                            <span className={cn(
+                              "rounded px-1.5 py-0.5 text-[10px] font-semibold",
+                              r.flag === "high" ? "bg-destructive/10 text-destructive" :
+                              r.flag === "low" ? "bg-warning/10 text-warning" :
+                              "bg-success/10 text-success"
+                            )}>
+                              {r.flag}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Main layout */}
       <div className="grid gap-6 xl:grid-cols-[1fr_320px]">
