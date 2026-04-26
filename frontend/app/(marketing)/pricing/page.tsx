@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
-import { useAuth0 } from "@auth0/auth0-react";
+import { useAuth } from "@clerk/nextjs";
 import Link from "next/link";
 import { ArrowRight, Check } from "lucide-react";
 
@@ -106,29 +106,27 @@ export default function PricingPage() {
 }
 
 function PricingContent() {
-  const { isAuthenticated, loginWithRedirect } = useAuth0();
+  const { isSignedIn } = useAuth();
   const searchParams = useSearchParams();
 
-  // After login redirect: if ?plan=<tier> is in the URL and user is
-  // authenticated, send them straight to Stripe Checkout.
+  // After sign-in redirect: if ?plan=<tier> is in the URL and user is
+  // signed in, send them straight to Stripe Checkout.
   useEffect(() => {
     const plan = searchParams.get("plan");
-    if (plan && isAuthenticated && checkoutUrls[plan]) {
+    if (plan && isSignedIn && checkoutUrls[plan]) {
       window.location.href = checkoutUrls[plan];
     }
-  }, [searchParams, isAuthenticated]);
+  }, [searchParams, isSignedIn]);
 
   const handleGetStarted = useCallback(
     (tierKey: string) => {
-      if (isAuthenticated) {
+      if (isSignedIn) {
         window.location.href = checkoutUrls[tierKey];
       } else {
-        loginWithRedirect({
-          appState: { returnTo: `/pricing?plan=${tierKey}` },
-        });
+        window.location.href = `/signIn?redirect_url=${encodeURIComponent(`/pricing?plan=${tierKey}`)}`;
       }
     },
-    [isAuthenticated, loginWithRedirect],
+    [isSignedIn],
   );
 
   return (

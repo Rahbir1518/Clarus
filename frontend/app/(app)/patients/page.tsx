@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useAuth0 } from "@auth0/auth0-react";
+import { useUser } from "@clerk/nextjs";
 import { listPatients, createPatient, deletePatient } from "@/services/api";
 
 import Link from "next/link";
@@ -29,8 +29,8 @@ export default function PatientsPage() {
   const [savingPatient, setSavingPatient] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const { user } = useAuth0();
-  const doctorId = user?.sub;
+  const { user } = useUser();
+  const doctorId = user?.id;
 
   const fetchPatients = useCallback(async () => {
     if (!doctorId) return;

@@ -4,7 +4,7 @@ import '@xyflow/react/dist/style.css';
 
 import { useState, useCallback, useRef, useEffect, type DragEvent } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { useAuth0 } from '@auth0/auth0-react';
+import { useUser } from '@clerk/nextjs';
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -151,7 +151,7 @@ const EXAMPLE_EDGES: Edge[] = [
 
 function FlowContent() {
   const { screenToFlowPosition, fitView } = useReactFlow();
-  const { user } = useAuth0();
+  const { user } = useUser();
   const searchParams = useSearchParams();
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
@@ -500,7 +500,7 @@ function FlowContent() {
     setWorkflowName(name);
     setWorkflowDescription(description);
 
-    const doctorId = user?.sub ?? 'anonymous';
+    const doctorId = user?.id ?? 'anonymous';
 
     try {
       if (savedWorkflowId) {
@@ -571,7 +571,7 @@ function FlowContent() {
     setNewPatientPhone('');
     setLoadingPatients(true);
     try {
-      const doctorId = user?.sub ?? undefined;
+      const doctorId = user?.id ?? undefined;
       const data = await listPatients(doctorId);
       setPatients(Array.isArray(data) ? data : []);
     } catch {
@@ -585,7 +585,7 @@ function FlowContent() {
     if (!newPatientName.trim() || !newPatientPhone.trim()) return;
     setAddingPatient(true);
     try {
-      const doctorId = user?.sub ?? 'anonymous';
+      const doctorId = user?.id ?? 'anonymous';
       const created = await createPatient({
         name: newPatientName.trim(),
         phone: newPatientPhone.trim(),

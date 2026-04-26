@@ -1,30 +1,32 @@
-"use client";
+import { SignUp } from "@clerk/nextjs";
 
-import { useAuth0 } from "@auth0/auth0-react";
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+const clerkAppearance = {
+  variables: {
+    colorPrimary: "#C43B3B",
+    colorBackground: "#F8F9F6",
+    colorText: "#1A1118",
+    colorTextSecondary: "#7A6E75",
+    colorInputBackground: "#F2F4F0",
+    colorInputText: "#1A1118",
+    borderRadius: "0.75rem",
+  },
+  elements: {
+    card: "shadow-xl border border-border",
+    headerTitle: "font-serif text-2xl",
+    headerSubtitle: "text-muted-foreground",
+    formButtonPrimary:
+      "bg-primary hover:bg-primary/90 text-primary-foreground transition-colors",
+    footerActionLink: "text-primary hover:text-primary/80",
+    identityPreviewEditButton: "text-primary",
+    formFieldInput:
+      "border-border bg-muted/40 focus:border-primary focus:ring-primary/20",
+    dividerLine: "bg-border",
+    dividerText: "text-muted-foreground text-xs",
+    socialButtonsBlockButton:
+      "border-border bg-card hover:bg-muted transition-colors text-foreground",
+  },
+};
 
-export default function SignUp() {
-  const { loginWithRedirect, isAuthenticated, isLoading } = useAuth0();
-  const router = useRouter();
-
-  useEffect(() => {
-    if (isLoading) return;
-
-    if (isAuthenticated) {
-      router.push("/dashboard");
-      return;
-    }
-
-    loginWithRedirect({
-      authorizationParams: { screen_hint: "signup" },
-      appState: { returnTo: "/dashboard" },
-    });
-  }, [isLoading, isAuthenticated, loginWithRedirect, router]);
-
-  return (
-    <div className="flex items-center justify-center min-h-screen">
-      <p className="text-lg">Redirecting to signup...</p>
-    </div>
-  );
+export default function SignUpPage() {
+  return <SignUp appearance={clerkAppearance} />;
 }
