@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     auth0_m2m_client_id: str = ""
     auth0_m2m_client_secret: str = ""
 
+    # Google Gemini (used for intelligent PDF extraction)
+    gemini_api_key: str = ""
+
     # App
     app_base_url: str = "http://localhost:8000"
 

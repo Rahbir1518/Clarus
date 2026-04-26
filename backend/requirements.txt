@@ -69,3 +69,4 @@ pdfplumber==0.11.9
 pdfminer.six==20251230
 pypdfium2==5.5.0
 python-multipart==0.0.20
+google-genai==1.73.1

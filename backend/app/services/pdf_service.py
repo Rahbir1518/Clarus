@@ -4,12 +4,16 @@ PDF Extraction Service
 Parses uploaded medical PDF documents (lab reports, patient records, etc.)
 and extracts structured data that can be used by the workflow engine.
 
-Uses pdfplumber for text extraction and regex-based parsing for common
-medical document patterns.
+Primary strategy:  Use Google Gemini to interpret the PDF content and return
+                   structured JSON — works with *any* PDF layout.
+Fallback strategy: If no Gemini API key is configured, fall back to
+                   pdfplumber + regex-based heuristics (limited to common
+                   medical document patterns).
 """
 from __future__ import annotations
 
 import io
+import json
 import logging
 import re
 from datetime import datetime
@@ -21,8 +25,197 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Common lab-test patterns   name: value  unit  reference-range
+# Text / table extraction (used by both strategies)
 # ---------------------------------------------------------------------------
+
+def extract_text_from_pdf(file_bytes: bytes) -> str:
+    """Extract all text from a PDF file."""
+    text_parts: list[str] = []
+    with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+        for page in pdf.pages:
+            page_text = page.extract_text()
+            if page_text:
+                text_parts.append(page_text)
+    return "\n".join(text_parts)
+
+
+def extract_tables_from_pdf(file_bytes: bytes) -> list[list[list[str | None]]]:
+    """Extract all tables from a PDF as lists of rows."""
+    tables: list[list[list[str | None]]] = []
+    with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+        for page in pdf.pages:
+            page_tables = page.extract_tables()
+            if page_tables:
+                tables.extend(page_tables)
+    return tables
+
+
+# ===========================================================================
+# Strategy 1 — LLM-powered extraction (Google Gemini)
+# ===========================================================================
+
+_EXTRACTION_PROMPT = """\
+You are a medical document parser. Analyze the following medical PDF text and
+extract ALL available structured data. The document may be a lab report,
+patient intake form, prescription list, discharge summary, referral letter,
+or any other clinical document. Adapt to whatever layout or format is present.
+
+Return a single JSON object (no markdown fences, no explanation) with exactly
+these top-level keys:
+
+{
+  "patient_info": {
+    "name": "<full name or null>",
+    "dob": "<date of birth in MM/DD/YYYY format or null>",
+    "mrn": "<medical record number or null>",
+    "phone": "<phone number or null>",
+    "email": "<email or null>",
+    "address": "<address or null>",
+    "insurance": "<insurance provider/plan or null>",
+    "sex": "<M/F/Other or null>",
+    "age": "<age as string or null>"
+  },
+  "lab_results": [
+    {
+      "test_name": "<name of lab test>",
+      "value": <numeric value as a number>,
+      "unit": "<unit of measure or empty string>",
+      "reference_range": "<reference range as string or empty string>",
+      "flag": "<high | low | normal | critical | abnormal>"
+    }
+  ],
+  "medications": [
+    {
+      "name": "<medication name>",
+      "dosage": "<dosage string or empty>",
+      "frequency": "<frequency or empty>",
+      "route": "<oral/IV/etc or empty>",
+      "status": "<active | discontinued | prn>"
+    }
+  ],
+  "diagnoses": [
+    {
+      "name": "<diagnosis or condition>",
+      "icd_code": "<ICD code if present or null>",
+      "status": "<active | resolved | chronic>"
+    }
+  ],
+  "vitals": {
+    "blood_pressure": "<e.g. 120/80 or null>",
+    "heart_rate": "<bpm or null>",
+    "temperature": "<temp or null>",
+    "weight": "<weight or null>",
+    "height": "<height or null>",
+    "bmi": "<bmi or null>",
+    "respiratory_rate": "<rate or null>",
+    "oxygen_saturation": "<SpO2 or null>"
+  },
+  "allergies": ["<allergy 1>", "<allergy 2>"],
+  "notes": "<any clinician notes, plan, or assessment as a single string or null>",
+  "document_type": "<lab_report | intake_form | discharge_summary | prescription | referral | progress_note | other>",
+  "document_date": "<document/report date in YYYY-MM-DD format or null>",
+  "provider_name": "<ordering/attending provider name or null>",
+  "facility_name": "<hospital/clinic name or null>"
+}
+
+Rules:
+- Return ONLY the JSON object. No markdown code fences. No explanation.
+- Use null for fields you cannot determine. Use empty arrays [] where no items found.
+- For lab_results, determine the flag by comparing value to reference_range when available.
+- Normalize medication names to title case.
+- Extract everything you can find — do not skip data that is present in the text.
+
+PDF TEXT:
+"""
+
+
+def _parse_gemini_response(response_text: str) -> dict[str, Any]:
+    """
+    Parse the JSON from Gemini's response, tolerating markdown code fences
+    or extra whitespace.
+    """
+    text = response_text.strip()
+
+    # Strip markdown fences if present
+    if text.startswith("```"):
+        # Remove opening fence (possibly ```json)
+        text = re.sub(r"^```\w*\n?", "", text)
+        text = re.sub(r"\n?```$", "", text)
+
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        # Try to find a JSON object in the response
+        match = re.search(r"\{[\s\S]*\}", text)
+        if match:
+            return json.loads(match.group())
+        raise
+
+
+async def _extract_with_gemini(text: str) -> dict[str, Any]:
+    """
+    Call Google Gemini to extract structured data from PDF text.
+    """
+    from app.core.config import settings
+
+    api_key = settings.gemini_api_key
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY not configured")
+
+    from google import genai
+
+    client = genai.Client(api_key=api_key)
+
+    prompt = _EXTRACTION_PROMPT + text[:30000]  # Cap to avoid token limits
+
+    response = client.models.generate_content(
+        model="gemini-2.0-flash",
+        contents=prompt,
+    )
+
+    raw_text = response.text
+    logger.debug("Gemini raw response length: %d", len(raw_text))
+
+    parsed = _parse_gemini_response(raw_text)
+
+    # Normalize the structure to ensure all expected keys exist
+    result: dict[str, Any] = {
+        "patient_info": parsed.get("patient_info", {}),
+        "lab_results": parsed.get("lab_results", []),
+        "medications": parsed.get("medications", []),
+        "diagnoses": parsed.get("diagnoses", []),
+        "vitals": parsed.get("vitals", {}),
+        "allergies": parsed.get("allergies", []),
+        "notes": parsed.get("notes"),
+        "document_type": parsed.get("document_type", "other"),
+        "document_date": parsed.get("document_date"),
+        "provider_name": parsed.get("provider_name"),
+        "facility_name": parsed.get("facility_name"),
+    }
+
+    # Ensure medication status defaults
+    for med in result["medications"]:
+        if not med.get("status"):
+            med["status"] = "active"
+
+    # Ensure lab result flags
+    for lab in result["lab_results"]:
+        if not lab.get("flag"):
+            lab["flag"] = "normal"
+        # Ensure value is numeric
+        if isinstance(lab.get("value"), str):
+            try:
+                lab["value"] = float(lab["value"])
+            except (ValueError, TypeError):
+                pass
+
+    return result
+
+
+# ===========================================================================
+# Strategy 2 — Regex fallback (original logic, for when no API key exists)
+# ===========================================================================
+
 _LAB_LINE_RE = re.compile(
     r"(?P<test_name>[A-Za-z\s\-/()]+?)\s+"
     r"(?P<value>[\d]+\.?\d*)\s*"
@@ -77,30 +270,8 @@ _MEDICATION_KEYWORDS = {
 }
 
 
-def extract_text_from_pdf(file_bytes: bytes) -> str:
-    """Extract all text from a PDF file."""
-    text_parts: list[str] = []
-    with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
-        for page in pdf.pages:
-            page_text = page.extract_text()
-            if page_text:
-                text_parts.append(page_text)
-    return "\n".join(text_parts)
-
-
-def extract_tables_from_pdf(file_bytes: bytes) -> list[list[list[str | None]]]:
-    """Extract all tables from a PDF as lists of rows."""
-    tables: list[list[list[str | None]]] = []
-    with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
-        for page in pdf.pages:
-            page_tables = page.extract_tables()
-            if page_tables:
-                tables.extend(page_tables)
-    return tables
-
-
-def parse_patient_info(text: str) -> dict[str, str | None]:
-    """Extract patient demographic info from PDF text."""
+def _parse_patient_info_regex(text: str) -> dict[str, str | None]:
+    """Extract patient demographic info from PDF text using regex."""
     info: dict[str, str | None] = {}
 
     m = _PATIENT_NAME_RE.search(text)
@@ -126,13 +297,8 @@ def parse_patient_info(text: str) -> dict[str, str | None]:
     return info
 
 
-def parse_lab_results(text: str) -> list[dict[str, Any]]:
-    """
-    Extract lab result rows from PDF text.
-
-    Returns a list of dicts with keys:
-      test_name, value (float), unit, reference_range, flag
-    """
+def _parse_lab_results_regex(text: str) -> list[dict[str, Any]]:
+    """Extract lab result rows from PDF text using regex."""
     results: list[dict[str, Any]] = []
     seen: set[str] = set()
 
@@ -173,11 +339,8 @@ def parse_lab_results(text: str) -> list[dict[str, Any]]:
     return results
 
 
-def parse_medications(text: str) -> list[dict[str, str]]:
-    """
-    Extract medications from PDF text.
-    Looks for a medications section first, then falls back to keyword matching.
-    """
+def _parse_medications_regex(text: str) -> list[dict[str, str]]:
+    """Extract medications from PDF text using regex."""
     medications: list[dict[str, str]] = []
     seen: set[str] = set()
 
@@ -216,36 +379,125 @@ def parse_medications(text: str) -> list[dict[str, str]]:
     return medications
 
 
-def parse_pdf_document(file_bytes: bytes) -> dict[str, Any]:
+def _extract_with_regex(text: str) -> dict[str, Any]:
+    """Regex-based fallback extraction."""
+    return {
+        "patient_info": _parse_patient_info_regex(text),
+        "lab_results": _parse_lab_results_regex(text),
+        "medications": _parse_medications_regex(text),
+        "diagnoses": [],
+        "vitals": {},
+        "allergies": [],
+        "notes": None,
+        "document_type": "other",
+        "document_date": None,
+        "provider_name": None,
+        "facility_name": None,
+    }
+
+
+# ===========================================================================
+# Public API  (unchanged interface — drop-in replacement)
+# ===========================================================================
+
+# Keep the old public names available for any code that imports them directly
+parse_patient_info = _parse_patient_info_regex
+parse_lab_results = _parse_lab_results_regex
+parse_medications = _parse_medications_regex
+
+
+async def parse_pdf_document_async(file_bytes: bytes) -> dict[str, Any]:
     """
     Full PDF parsing pipeline — returns structured data extracted from
     a medical PDF document.
 
+    Uses Gemini when available, falls back to regex otherwise.
+
     Returns:
         {
             "raw_text": str,
-            "patient_info": { name, dob, mrn, phone, insurance },
+            "patient_info": { name, dob, mrn, phone, insurance, ... },
             "lab_results": [ { test_name, value, unit, reference_range, flag } ],
+            "medications": [ { name, dosage, status, ... } ],
+            "diagnoses": [ ... ],
+            "vitals": { ... },
+            "allergies": [ ... ],
             "tables": [ ... ],
             "page_count": int,
             "extracted_at": str (ISO timestamp),
+            "extraction_method": "gemini" | "regex",
         }
     """
     text = extract_text_from_pdf(file_bytes)
     tables = extract_tables_from_pdf(file_bytes)
-    patient_info = parse_patient_info(text)
-    lab_results = parse_lab_results(text)
-    medications = parse_medications(text)
 
     with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
         page_count = len(pdf.pages)
 
+    # Try Gemini first
+    extraction_method = "regex"
+    try:
+        from app.core.config import settings
+        if settings.gemini_api_key:
+            extracted = await _extract_with_gemini(text)
+            extraction_method = "gemini"
+            logger.info("PDF extracted via Gemini (%d chars of text)", len(text))
+        else:
+            extracted = _extract_with_regex(text)
+            logger.info("PDF extracted via regex fallback (no GEMINI_API_KEY)")
+    except Exception as exc:
+        logger.warning("Gemini extraction failed, falling back to regex: %s", exc)
+        extracted = _extract_with_regex(text)
+
     return {
         "raw_text": text,
-        "patient_info": patient_info,
-        "lab_results": lab_results,
-        "medications": medications,
+        "patient_info": extracted.get("patient_info", {}),
+        "lab_results": extracted.get("lab_results", []),
+        "medications": extracted.get("medications", []),
+        "diagnoses": extracted.get("diagnoses", []),
+        "vitals": extracted.get("vitals", {}),
+        "allergies": extracted.get("allergies", []),
+        "notes": extracted.get("notes"),
+        "document_type": extracted.get("document_type", "other"),
+        "document_date": extracted.get("document_date"),
+        "provider_name": extracted.get("provider_name"),
+        "facility_name": extracted.get("facility_name"),
         "tables": tables,
         "page_count": page_count,
         "extracted_at": datetime.utcnow().isoformat() + "Z",
+        "extraction_method": extraction_method,
     }
+
+
+def parse_pdf_document(file_bytes: bytes) -> dict[str, Any]:
+    """
+    Synchronous wrapper around parse_pdf_document_async.
+
+    If called from within a running event loop (e.g. a FastAPI endpoint),
+    callers should use parse_pdf_document_async directly. This wrapper
+    exists for backwards compatibility.
+    """
+    import asyncio
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        text = extract_text_from_pdf(file_bytes)
+        tables = extract_tables_from_pdf(file_bytes)
+        with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+            page_count = len(pdf.pages)
+
+        extracted = _extract_with_regex(text)
+        return {
+            "raw_text": text,
+            **extracted,
+            "tables": tables,
+            "page_count": page_count,
+            "extracted_at": datetime.utcnow().isoformat() + "Z",
+            "extraction_method": "regex",
+        }
+    else:
+        return asyncio.run(parse_pdf_document_async(file_bytes))

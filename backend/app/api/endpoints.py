@@ -1359,7 +1359,7 @@ async def upload_pdf(
     Upload a medical PDF, extract structured data (patient info, lab results,
     tables), and optionally link it to a patient.
     """
-    from app.services.pdf_service import parse_pdf_document
+    from app.services.pdf_service import parse_pdf_document_async
 
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted")
@@ -1369,7 +1369,7 @@ async def upload_pdf(
         raise HTTPException(status_code=400, detail="PDF must be under 20 MB")
 
     try:
-        parsed = parse_pdf_document(contents)
+        parsed = await parse_pdf_document_async(contents)
     except Exception as exc:
         logger.exception("PDF parsing failed")
         raise HTTPException(status_code=422, detail=f"Failed to parse PDF: {exc}")
@@ -1413,7 +1413,7 @@ async def pdf_intake(
     Extracts patient demographics, medications, and lab results from the PDF
     and creates the patient record + medication records automatically.
     """
-    from app.services.pdf_service import parse_pdf_document
+    from app.services.pdf_service import parse_pdf_document_async
 
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted")
@@ -1423,7 +1423,7 @@ async def pdf_intake(
         raise HTTPException(status_code=400, detail="PDF must be under 20 MB")
 
     try:
-        parsed = parse_pdf_document(contents)
+        parsed = await parse_pdf_document_async(contents)
     except Exception as exc:
         logger.exception("PDF parsing failed")
         raise HTTPException(status_code=422, detail=f"Failed to parse PDF: {exc}")
@@ -1518,7 +1518,7 @@ async def import_pdf_to_patient(patient_id: str, file: UploadFile = File(...)):
     that are currently empty (does not overwrite existing data).
     Also creates medication records for any medications found in the PDF.
     """
-    from app.services.pdf_service import parse_pdf_document
+    from app.services.pdf_service import parse_pdf_document_async
 
     patient = db.get_patient(patient_id)
     if not patient:
@@ -1532,7 +1532,7 @@ async def import_pdf_to_patient(patient_id: str, file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="PDF must be under 20 MB")
 
     try:
-        parsed = parse_pdf_document(contents)
+        parsed = await parse_pdf_document_async(contents)
     except Exception as exc:
         logger.exception("PDF parsing failed")
         raise HTTPException(status_code=422, detail=f"Failed to parse PDF: {exc}")
@@ -1657,7 +1657,7 @@ async def extract_pdf_and_execute(
     Upload a PDF (e.g. lab report), extract data, then execute a workflow
     with the extracted lab results injected into the execution context.
     """
-    from app.services.pdf_service import parse_pdf_document
+    from app.services.pdf_service import parse_pdf_document_async
 
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted")
@@ -1665,7 +1665,7 @@ async def extract_pdf_and_execute(
     contents = await file.read()
 
     try:
-        parsed = parse_pdf_document(contents)
+        parsed = await parse_pdf_document_async(contents)
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"Failed to parse PDF: {exc}")
 
