@@ -60,18 +60,28 @@ extract ALL available structured data. The document may be a lab report,
 patient intake form, prescription list, discharge summary, referral letter,
 or any other clinical document. Adapt to whatever layout or format is present.
 
+CRITICAL — Multi-column table layouts:
+Medical PDFs often use side-by-side columns (e.g. "Patient Name: James Okafor
+Date of Birth: 1968-03-15" on ONE line). When text is extracted, adjacent
+columns get concatenated.  You MUST identify field-label boundaries
+(e.g. "Date of Birth", "DOB", "MRN", "Phone", "Age", "Insurance",
+"Collection Date", "Ordering Physician") and use them to split values
+correctly. A patient name NEVER contains phrases like "Date of Birth", "DOB",
+"MRN", "Age", "Phone", "Insurance", etc. — those mark the START of a new
+field on the same line.
+
 Return a single JSON object (no markdown fences, no explanation) with exactly
 these top-level keys:
 
 {
   "patient_info": {
-    "name": "<full name or null>",
+    "name": "<full name ONLY — stop before any next field label>",
     "dob": "<date of birth in MM/DD/YYYY format or null>",
     "mrn": "<medical record number or null>",
     "phone": "<phone number or null>",
     "email": "<email or null>",
     "address": "<address or null>",
-    "insurance": "<insurance provider/plan or null>",
+    "insurance": "<insurance provider/plan and number or null>",
     "sex": "<M/F/Other or null>",
     "age": "<age as string or null>"
   },
@@ -124,9 +134,30 @@ Rules:
 - For lab_results, determine the flag by comparing value to reference_range when available.
 - Normalize medication names to title case.
 - Extract everything you can find — do not skip data that is present in the text.
+- NEVER include a field label (like "Date of Birth", "MRN", "Age", etc.) as
+  part of another field's value. If you see "James Okafor Date of Birth" in
+  the raw text, the name is "James Okafor" and "Date of Birth" starts the
+  next field.
+- If TABLE DATA is provided below, use it to resolve ambiguities — each cell
+  in a table row is a separate column, so values don't bleed into each other.
 
-PDF TEXT:
 """
+
+
+def _format_tables_for_prompt(tables: list[list[list[str | None]]]) -> str:
+    """Format extracted tables into a readable string for the LLM prompt."""
+    if not tables:
+        return ""
+
+    parts = ["\n\nTABLE DATA (each row is a list of cell values, columns are separated by | ):"]
+    for i, table in enumerate(tables, 1):
+        parts.append(f"\n--- Table {i} ---")
+        for row in table:
+            cleaned = [str(cell).strip() if cell else "" for cell in row]
+            parts.append(" | ".join(cleaned))
+    return "\n".join(parts)
+
+
 
 
 def _parse_gemini_response(response_text: str) -> dict[str, Any]:
@@ -152,9 +183,13 @@ def _parse_gemini_response(response_text: str) -> dict[str, Any]:
         raise
 
 
-async def _extract_with_gemini(text: str) -> dict[str, Any]:
+async def _extract_with_gemini(
+    text: str,
+    tables: list[list[list[str | None]]] | None = None,
+) -> dict[str, Any]:
     """
     Call Google Gemini to extract structured data from PDF text.
+    Optionally includes table data to help resolve multi-column ambiguities.
     """
     from app.core.config import settings
 
@@ -166,10 +201,16 @@ async def _extract_with_gemini(text: str) -> dict[str, Any]:
 
     client = genai.Client(api_key=api_key)
 
-    prompt = _EXTRACTION_PROMPT + text[:30000]  # Cap to avoid token limits
+    table_text = _format_tables_for_prompt(tables) if tables else ""
+    prompt = (
+        _EXTRACTION_PROMPT
+        + "PDF TEXT:\n"
+        + text[:28000]
+        + table_text[:2000]
+    )
 
     response = client.models.generate_content(
-        model="gemini-2.0-flash",
+        model="gemini-2.5-flash",
         contents=prompt,
     )
 
@@ -439,7 +480,7 @@ async def parse_pdf_document_async(file_bytes: bytes) -> dict[str, Any]:
     try:
         from app.core.config import settings
         if settings.gemini_api_key:
-            extracted = await _extract_with_gemini(text)
+            extracted = await _extract_with_gemini(text, tables=tables)
             extraction_method = "gemini"
             logger.info("PDF extracted via Gemini (%d chars of text)", len(text))
         else:
