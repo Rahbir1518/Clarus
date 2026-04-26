@@ -1,11 +1,12 @@
 "use client";
 
-import { useAuth0 } from "@auth0/auth0-react";
+import { useUser, useClerk } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
 import { User, Mail, Shield, LogOut, ExternalLink } from "lucide-react";
 
 export default function SettingsPage() {
-  const { user, isAuthenticated, logout } = useAuth0();
+  const { user, isSignedIn } = useUser();
+  const { signOut } = useClerk();
 
   return (
     <div className="space-y-6 max-w-2xl">
@@ -20,33 +21,33 @@ export default function SettingsPage() {
       <div className="rounded-xl border border-border bg-card">
         <div className="border-b border-border px-5 py-4">
           <h3 className="text-sm font-semibold">Profile</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">Your account information from Auth0.</p>
+          <p className="text-xs text-muted-foreground mt-0.5">Your account information.</p>
         </div>
         <div className="p-5 space-y-4">
-          {isAuthenticated && user ? (
+          {isSignedIn && user ? (
             <>
               <div className="flex items-center gap-4">
-                {user.picture ? (
+                {user.imageUrl ? (
                   <img
-                    src={user.picture}
-                    alt={user.name || "User"}
+                    src={user.imageUrl}
+                    alt={user.fullName || "User"}
                     className="size-14 rounded-full border border-border"
                   />
                 ) : (
                   <div className="flex size-14 items-center justify-center rounded-full bg-primary text-lg font-bold text-primary-foreground">
-                    {user.name?.charAt(0)?.toUpperCase() || "U"}
+                    {user.fullName?.charAt(0)?.toUpperCase() || "U"}
                   </div>
                 )}
                 <div>
-                  <p className="text-base font-semibold">{user.name || "—"}</p>
-                  <p className="text-sm text-muted-foreground">{user.email || "—"}</p>
+                  <p className="text-base font-semibold">{user.fullName || "—"}</p>
+                  <p className="text-sm text-muted-foreground">{user.primaryEmailAddress?.emailAddress || "—"}</p>
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <InfoRow icon={User} label="Name" value={user.name || "—"} />
-                <InfoRow icon={Mail} label="Email" value={user.email || "—"} />
-                <InfoRow icon={Shield} label="Auth0 ID" value={user.sub || "—"} />
-                <InfoRow icon={ExternalLink} label="Provider" value={user.sub?.split("|")[0] || "—"} />
+                <InfoRow icon={User} label="Name" value={user.fullName || "—"} />
+                <InfoRow icon={Mail} label="Email" value={user.primaryEmailAddress?.emailAddress || "—"} />
+                <InfoRow icon={Shield} label="User ID" value={user.id || "—"} />
+                <InfoRow icon={ExternalLink} label="Auth Provider" value="Clerk" />
               </div>
             </>
           ) : (
@@ -63,12 +64,11 @@ export default function SettingsPage() {
         <div className="p-5 space-y-3">
           <InfoRow icon={Shield} label="App" value="Clarus — Clinical Workflow Automation" />
           <InfoRow icon={ExternalLink} label="API" value={process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"} />
-          <InfoRow icon={ExternalLink} label="Auth0 Domain" value={process.env.NEXT_PUBLIC_AUTH0_DOMAIN || "—"} />
         </div>
       </div>
 
       {/* Sign out */}
-      {isAuthenticated && (
+      {isSignedIn && (
         <div className="rounded-xl border border-border bg-card p-5">
           <div className="flex items-center justify-between">
             <div>
@@ -77,7 +77,7 @@ export default function SettingsPage() {
             </div>
             <Button
               variant="outline"
-              onClick={() => logout({ logoutParams: { returnTo: window.location.origin } })}
+              onClick={() => signOut({ redirectUrl: "/" })}
               className="text-destructive hover:text-destructive hover:bg-destructive/10"
             >
               <LogOut className="size-4" />

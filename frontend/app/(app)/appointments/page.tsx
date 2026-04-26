@@ -1,15 +1,15 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useAuth0 } from "@auth0/auth0-react";
+import { useUser } from "@clerk/nextjs";
 import { listCallLogs } from "@/services/api";
 
 import { cn } from "@/lib/utils";
 import { Calendar, CheckCircle2, Clock, AlertCircle } from "lucide-react";
 
 export default function AppointmentsPage() {
-  const { user } = useAuth0();
-  const doctorId = user?.sub;
+  const { user } = useUser();
+  const doctorId = user?.id;
 
   const [callLogs, setCallLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
