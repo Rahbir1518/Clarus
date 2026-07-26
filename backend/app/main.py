@@ -7,7 +7,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import health, patients
+from app.api.routes import health, patients, webhooks
 from app.core.config import get_settings
 from app.core.errors import register_error_handlers
 
@@ -46,3 +46,5 @@ app.add_middleware(
 
 app.include_router(health.router)
 app.include_router(patients.router, prefix="/api")
+# Signature-authenticated, not token-authenticated. See routes/webhooks.py.
+app.include_router(webhooks.router, prefix="/api")

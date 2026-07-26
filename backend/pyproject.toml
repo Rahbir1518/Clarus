@@ -13,12 +13,14 @@ dependencies = [
     "pydantic-settings>=2.6",
     "supabase>=2.10",
     "pyjwt[crypto]>=2.10",
+    "httpx>=0.28",
+    # Reads agents/*.yaml — the agent definitions kept under version control.
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.3",
-    "httpx>=0.28",
 ]
 
 [tool.pytest.ini_options]

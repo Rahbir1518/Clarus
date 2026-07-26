@@ -25,9 +25,12 @@ business logic yet.
 | Fail-fast configuration | ✅ `app/core/config.py` |
 | Error envelope that does not leak internals | ✅ `app/core/errors.py` |
 | Patients CRUD — the reference vertical slice | ✅ `app/api/routes/patients.py` |
-| Test suite (41 tests) | ✅ `tests/` |
+| ElevenLabs agent definition, in version control | ✅ `agents/appointment_confirmation.yaml` |
+| ElevenLabs client + outbound calling | ✅ `app/integrations/elevenlabs/` |
+| Post-call webhook, signature-verified | ✅ `app/api/routes/webhooks.py` |
+| Test suite (71 tests) | ✅ `tests/` |
 | Workflows, call logs, conditions, medications | ❌ not ported |
-| Workflow engine, ElevenLabs, Twilio, Calendar, PDF | ❌ not ported |
+| Workflow engine, Twilio TwiML, Calendar, PDF | ❌ not ported |
 
 ---
 
@@ -97,6 +100,86 @@ tenant's record exists.
 `get_settings()` resolves at import in `app/main.py`. A missing
 `SUPABASE_URL` or `AUTH0_AUDIENCE` kills the process on startup rather than
 producing a 500 on whichever request first needed it.
+
+---
+
+## ElevenLabs
+
+You do **not** need Supabase or the rest of the backend working to start here.
+The agent is configured entirely on ElevenLabs' side, and `scripts/test_call.py`
+places a real call with no database involved.
+
+### The rule that matters
+
+**`agents/appointment_confirmation.yaml` is the source of truth. The dashboard
+is a rendering of it.**
+
+[AUDIT.md §2a](../AUDIT.md) identified the old agent as the project's single
+unrecoverable dependency: its prompt, its six data-collection fields and its
+Twilio binding existed only in the ElevenLabs dashboard, so losing account
+access meant reconstructing it from the field names the backend happened to
+read. Edit the YAML and run the sync script; don't click in the dashboard.
+
+### Setup, in order
+
+1. **Account + API key** — ElevenLabs → Developers → API Keys.
+   Set `ELEVENLABS_API_KEY`.
+2. **Phone number** — import your Twilio number under Agents → Phone Numbers
+   (needs the Twilio SID and auth token). Then:
+   ```bash
+   python scripts/test_call.py --list-numbers
+   ```
+   Put the id into `ELEVENLABS_PHONE_NUMBER_ID`.
+3. **Create the agent from the spec**:
+   ```bash
+   python scripts/sync_agent.py --dry-run   # inspect the payload
+   python scripts/sync_agent.py             # create it
+   ```
+   It prints an agent id for `ELEVENLABS_AGENT_ID`, then reads the agent back
+   and checks every declared data-collection field actually landed. That
+   read-back is the point: a 200 only means the request was accepted, and an
+   agent that silently collects nothing is exactly how the old system ended up
+   scraping transcripts for the word "yes".
+4. **Call your own phone**:
+   ```bash
+   python scripts/test_call.py --to +15551234567
+   python scripts/test_call.py --conversation conv_abc123   # read the result
+   ```
+   Iterate on the prompt in the YAML, re-run `sync_agent.py`, call again.
+5. **Webhook** — ElevenLabs → Webhooks → post-call transcription, pointed at
+   `https://<your-host>/api/elevenlabs/webhook`. Copy the signing secret into
+   `ELEVENLABS_WEBHOOK_SECRET`. Locally: `ngrok http 8000`.
+
+### What the webhook will and will not accept
+
+Signature verification is the *entire* access control on that route — there is
+no user token. `ELEVENLABS_WEBHOOK_SECRET` being unset does not mean "skip
+verification", it means every request is refused.
+
+Rejected: unsigned requests, wrong secret, bodies altered after signing,
+signatures older than `WEBHOOK_TOLERANCE_SECONDS` (replay), and far-future
+timestamps. A signed payload still cannot reassign a call log to a different
+`doctor_id` or `patient_id`.
+
+Unknown conversation ids get a 204, not a 404 — a 404 would make the endpoint
+an oracle for which conversations exist.
+
+### Two old bugs designed out
+
+- **The "yes" heuristic.** The old code matched `\byes\b` anywhere in the
+  transcript, including the agent's own lines, and booked appointments patients
+  had not agreed to. Confirmation is now a structured boolean the agent must
+  set deliberately, and `patient_confirmed` is *nullable*: null means the call
+  never established it (voicemail, wrong number), which is not the same as a
+  refusal.
+- **The PM guess.** The old `_resolve_time()` turned any hour below 8 into PM,
+  so a patient saying "7 AM" was booked at 19:00. The agent is now instructed to
+  disambiguate verbally, read the time back, and return null rather than guess.
+  A confirmation without an unambiguous time sets `needs_review` instead of
+  becoming an appointment.
+
+`CallResult.is_bookable` is the only thing that should ever trigger a calendar
+event. Everything else goes to `needs_review`.
 
 ---
 

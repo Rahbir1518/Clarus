@@ -20,6 +20,7 @@ import pytest
 TEST_DOMAIN = "clarus-test.us.auth0.com"
 TEST_AUDIENCE = "https://api.clarus.test"
 TEST_ISSUER = f"https://{TEST_DOMAIN}/"
+TEST_WEBHOOK_SECRET = "wsec_test_secret"
 
 # Must be set before app.core.config resolves its cached Settings.
 os.environ.update(
@@ -29,6 +30,7 @@ os.environ.update(
         "AUTH0_DOMAIN": TEST_DOMAIN,
         "AUTH0_AUDIENCE": TEST_AUDIENCE,
         "ENVIRONMENT": "test",
+        "ELEVENLABS_WEBHOOK_SECRET": TEST_WEBHOOK_SECRET,
     }
 )
 
@@ -226,4 +228,10 @@ def unauthenticated_client(fake_db: FakeSupabase):
     app.dependency_overrides.clear()
 
 
-__all__ = ["FakeSupabase", "get_tenant_scope", "TEST_AUDIENCE", "TEST_ISSUER"]
+__all__ = [
+    "FakeSupabase",
+    "get_tenant_scope",
+    "TEST_AUDIENCE",
+    "TEST_ISSUER",
+    "TEST_WEBHOOK_SECRET",
+]
