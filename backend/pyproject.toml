@@ -1,0 +1,34 @@
+[project]
+name = "clarus-backend"
+version = "0.1.0"
+description = "Clarus — medical workflow automation API"
+requires-python = ">=3.12"
+
+# Direct dependencies only. The previous backend shipped a full `pip freeze`
+# with 70+ transitive pins; resolve transitives at install time instead.
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "supabase>=2.10",
+    "pyjwt[crypto]>=2.10",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "httpx>=0.28",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+filterwarnings = ["error::DeprecationWarning"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]

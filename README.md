@@ -19,6 +19,26 @@
 
 ---
 
+> ### ⚠️ Status: backend rebuild in progress (as of 2026-07-25)
+>
+> The backend was deleted and is being rebuilt from scratch. See
+> [AUDIT.md](AUDIT.md) for why, and [backend/README.md](backend/README.md) for
+> what exists today.
+>
+> **Sections below marked _(pre-rebuild)_ describe the old backend and are kept
+> as a record of intended behaviour, not as a description of current code.**
+> The frontend sections are current.
+>
+> What is real right now: the schema in
+> [backend/migrations/000_initial_schema.sql](backend/migrations/000_initial_schema.sql),
+> Auth0 JWT verification, enforced tenant isolation, and patients CRUD.
+> Everything else — workflows, call logs, the workflow engine, ElevenLabs,
+> Twilio, Google Calendar and PDF processing — is not yet ported.
+>
+> The old backend remains readable at commit `91382a9`.
+
+---
+
 ## Overview
 
 Clarus helps clinicians automate patient follow-up through:
@@ -127,7 +147,7 @@ graph TB
 | **Frontend** | Next.js 16, React 19, TypeScript 5, Tailwind CSS 4 | App Router with protected routes, server/client components, responsive UI |
 | **Workflow UI** | React Flow (@xyflow/react), Dagre | Visual workflow builder with drag-and-drop nodes and edges |
 | **Authentication** | Auth0 (`@auth0/auth0-react`) | Sign-in/sign-up, `user.sub` as `doctor_id` for data scoping |
-| **Backend** | FastAPI, Uvicorn, Python 3.12+ | REST API, Pydantic schemas, async handlers |
+| **Backend** | FastAPI, Uvicorn, Python 3.12+ | REST API, Pydantic schemas, Auth0 JWT verification, tenant-scoped data access |
 | **Database** | Supabase (PostgreSQL) | Workflows, patients, conditions, medications, call_logs, pdf_documents |
 | **Voice AI** | ElevenLabs Conversational AI | Outbound AI voice calls via Twilio; webhook for call outcomes |
 | **Telephony** | Twilio | Voice calls (ElevenLabs integration), SMS fallback |
@@ -136,7 +156,7 @@ graph TB
 | **HTTP Client** | httpx | Async requests to ElevenLabs, Google APIs |
 | **UI** | shadcn/ui, Lucide React | Buttons, modals, icons across dashboard and app |
 | **3D** | Three.js, React Three Fiber, Drei | Marketing page visuals (sphere, particles) |
-| **Deployment** | Vercel, Render | Frontend on Vercel; backend on Render (uvicorn) |
+| **Deployment** | Vercel, container | Frontend on Vercel; backend ships as a Docker image, production host not yet chosen (Render removed) |
 
 ---
 
@@ -189,24 +209,32 @@ frontend/
 
 ```
 backend/
-├── main.py                           # FastAPI app, CORS, router
 ├── app/
-│   ├── api/
-│   │   └── endpoints.py             # All REST routes
+│   ├── main.py                       # FastAPI app, CORS, error handlers
 │   ├── core/
-│   │   └── config.py                 # Pydantic settings
-│   └── services/
-│       ├── supabase_service.py       # DB CRUD
-│       ├── workflow_engine.py        # Graph execution
-│       ├── elevenlabs_service.py     # Outbound calls
-│       ├── google_calendar_service.py
-│       └── pdf_service.py            # PDF extraction
+│   │   ├── config.py                 # Settings; fails fast when incomplete
+│   │   ├── security.py               # Auth0 JWT verification (RS256 + JWKS)
+│   │   └── errors.py                 # Error envelope, no internal leakage
+│   ├── db/
+│   │   ├── client.py                 # Supabase client
+│   │   └── tenancy.py                # TenantScope — the isolation choke point
+│   ├── api/
+│   │   ├── deps.py                   # Only place a TenantScope is built
+│   │   └── routes/
+│   │       ├── health.py
+│   │       └── patients.py           # Reference vertical slice
+│   └── schemas/
+│       └── patient.py
 ├── migrations/
-│   └── 001_create_new_tables.sql
-├── requirements.txt
-├── Procfile                          # uvicorn for Render
+│   └── 000_initial_schema.sql        # All 11 tables, in version control
+├── tests/                            # 41 tests: auth + tenant isolation
+├── Dockerfile                        # Host-agnostic; replaces render.yaml
+├── pyproject.toml                    # Direct deps only
 └── .env.example
 ```
+
+See [backend/README.md](backend/README.md) for how to run it and how to port
+the next resource.
 
 ---
 
@@ -274,9 +302,15 @@ Process input, return TwiML
 
 ---
 
-## Routes & Protection
+## Routes & Protection *(pre-rebuild)*
 
-| Route | Purpose | Protection |
+> ⚠️ The "Auth0" column below is **aspirational, not implemented**. The
+> frontend's `(app)/layout.tsx` destructures `isAuthenticated` and never uses
+> it — there is no redirect and no `middleware.ts`. Every route listed as
+> protected currently renders for anyone. Fixing this is tracked in
+> [AUDIT.md §4](AUDIT.md).
+
+| Route | Purpose | Protection (intended) |
 |-------|---------|------------|
 | `/` | Landing page | Public |
 | `/about`, `/features`, `/pricing`, `/contact` | Marketing | Public |
@@ -295,11 +329,28 @@ Process input, return TwiML
 
 ## REST API Endpoints
 
+### Implemented today
+
+All `/api/*` routes require `Authorization: Bearer <Auth0 JWT>` and are scoped
+to the token's `sub`. A missing or invalid token is a 401; another tenant's
+record is a 404.
+
+| Endpoint | Method | Auth |
+|----------|--------|------|
+| `/health` | GET | Public |
+| `/health/ready` | GET | Public |
+| `/api/patients` | GET, POST | Required |
+| `/api/patients/{id}` | GET, PUT, DELETE | Required |
+
+### Not yet ported *(pre-rebuild)*
+
+The routes below existed in the old backend and are the target surface for the
+rebuild. The frontend still calls them, so they will be restored at the same
+paths. None of them exist right now.
+
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/health` | GET | Health check |
-| `/api/patients` | GET, POST | List, create patients |
-| `/api/patients/{id}` | GET, PUT, DELETE | Get, update, delete patient |
+| `/api/patients/{id}/conditions` | GET, POST | List, create conditions |
 | `/api/patients/{id}/conditions` | GET, POST | List, create conditions |
 | `/api/patients/{id}/conditions/{cid}` | PUT, DELETE | Update, delete condition |
 | `/api/patients/{id}/medications` | GET, POST | List, create medications |
@@ -329,6 +380,12 @@ Process input, return TwiML
 ---
 
 ## Database Schema (Core Tables)
+
+> The authoritative schema is
+> [backend/migrations/000_initial_schema.sql](backend/migrations/000_initial_schema.sql).
+> The sketch below is a summary; where the two differ, the migration wins.
+> Note it now includes `patients.email`, `workflows.doctor_name` and
+> `call_logs.doctor_id`, which the old code read but no migration ever created.
 
 ```
 workflows              patients              call_logs
@@ -360,27 +417,32 @@ workflows              patients              call_logs
 | `NEXT_PUBLIC_API_URL` | Backend URL (default `http://localhost:8000`) |
 | `NEXT_PUBLIC_AUTH0_DOMAIN` | Auth0 tenant domain |
 | `NEXT_PUBLIC_AUTH0_CLIENT_ID` | Auth0 client ID |
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key |
+| `NEXT_PUBLIC_AUTH0_AUDIENCE` | **Required by the new backend.** Must match `AUTH0_AUDIENCE`, or Auth0 issues an opaque token instead of a JWT and every API call 401s |
+| `NEXT_PUBLIC_SUPABASE_URL` | *Unused* — `lib/supabase.ts` is imported by nothing |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | *Unused* — see above |
 
 ### Backend (`backend/.env`)
+
+Required — the process refuses to start without all four:
 
 | Variable | Purpose |
 |----------|---------|
 | `SUPABASE_URL` | Supabase project URL |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key |
-| `TWILIO_ACCOUNT_SID` | Twilio account SID |
-| `TWILIO_AUTH_TOKEN` | Twilio auth token |
-| `TWILIO_PHONE_NUMBER` | Twilio phone number |
-| `ELEVENLABS_API_KEY` | ElevenLabs API key |
-| `ELEVENLABS_AGENT_ID` | ElevenLabs agent ID |
-| `ELEVENLABS_PHONE_NUMBER_ID` | ElevenLabs phone number ID |
+| `SUPABASE_SERVICE_ROLE_KEY` | Service role key. Bypasses RLS; never expose to a browser |
 | `AUTH0_DOMAIN` | Auth0 tenant domain |
-| `AUTH0_CLIENT_ID` | Auth0 application client ID |
-| `AUTH0_CLIENT_SECRET` | Auth0 application client secret |
-| `AUTH0_M2M_CLIENT_ID` | Auth0 M2M app (for Google tokens) |
-| `AUTH0_M2M_CLIENT_SECRET` | Auth0 M2M app secret |
-| `APP_BASE_URL` | Backend base URL (for webhooks) |
+| `AUTH0_AUDIENCE` | API identifier registered in Auth0 → Applications → APIs |
+
+Optional:
+
+| Variable | Purpose |
+|----------|---------|
+| `ENVIRONMENT` | `production` disables `/docs` and `/openapi.json` |
+| `CORS_ORIGINS` | Comma-separated exact origins |
+| `CORS_ORIGIN_REGEX` | For preview deployments. `allow_origins` does exact matching and never expanded globs like `https://*.vercel.app` |
+
+Twilio, ElevenLabs and the Auth0 M2M credentials are listed in
+[backend/.env.example](backend/.env.example) but are not read by any code yet —
+those integrations have not been ported.
 
 ---
 
@@ -396,16 +458,23 @@ workflows              patients              call_logs
 
 ```bash
 cd backend
-pip install -r requirements.txt
+python -m venv .venv
+.venv/Scripts/activate          # Windows;  source .venv/bin/activate elsewhere
+pip install -e ".[dev]"
 
 # Configure environment
 cp .env.example .env
-# Edit .env with your credentials
+# Fill in the four required values
+
+# Apply the schema (once, against a fresh Supabase project)
+psql "$DATABASE_URL" -f migrations/000_initial_schema.sql
 
 # Start the server
-uvicorn main:app --reload --port 8000
+uvicorn app.main:app --reload --port 8000
 # → Runs on http://localhost:8000
 # → Docs at http://localhost:8000/docs
+
+pytest                          # 41 tests
 ```
 
 ### Frontend
@@ -434,11 +503,17 @@ npm run dev
 ## Deployment
 
 - **Frontend**: Vercel (Next.js)
-- **Backend**: Render (Python, `uvicorn main:app --host 0.0.0.0 --port $PORT`)
+- **Backend**: container, host not yet chosen — see [backend/Dockerfile](backend/Dockerfile)
 - **Database**: Supabase (hosted PostgreSQL)
 - **Auth**: Auth0
 
-See `render.yaml` for Render configuration.
+> **Render has been removed.** `render.yaml` is deleted, so nothing new deploys
+> there. That does **not** stop a Render service already running from its last
+> build — it keeps serving until it is suspended or deleted in the Render
+> dashboard, and its credentials keep working until rotated.
+>
+> Production will be a new, independent service built from the Dockerfile. Set
+> `ENVIRONMENT=production` there to disable `/docs` and `/openapi.json`.
 
 ---
 
