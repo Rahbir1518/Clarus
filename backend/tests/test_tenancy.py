@@ -140,9 +140,20 @@ def test_missing_patient_is_404_not_500(client, auth_header):
         {"name": "No Phone"},                # no phone
         {"name": "", "phone": "+1555"},     # empty name
         {"name": "X", "phone": "+1555", "risk_level": "catastrophic"},
+        # 'medium' was what this model and the database CHECK used to accept,
+        # while the UI only ever sent 'moderate'. One spelling now, and it is
+        # the UI's, so the old one is as invalid as any other typo.
+        {"name": "X", "phone": "+1555", "risk_level": "medium"},
     ],
 )
 def test_invalid_payloads_are_422(client, auth_header, payload):
     response = client.post("/api/patients", json=payload, headers=auth_header(ALICE))
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "validation_error"
+
+
+def test_moderate_risk_is_accepted(client, auth_header):
+    """The risk select has always offered 'moderate'; the API rejected it with a
+    422 and the database CHECK would have rejected it again behind that."""
+    created = _create_patient(client, auth_header(ALICE), risk_level="moderate")
+    assert created["risk_level"] == "moderate"

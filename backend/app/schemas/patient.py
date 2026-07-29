@@ -9,7 +9,11 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-RiskLevel = Literal["low", "medium", "high"]
+# 'moderate', not 'medium'. The risk select in the patient detail page has always
+# sent 'moderate' while this model and the database CHECK both said 'medium', so
+# saving a moderate-risk patient was rejected — by the API with a 422, and by the
+# database behind it. One spelling, and it is the one the UI already sends.
+RiskLevel = Literal["low", "moderate", "high"]
 
 _REQUEST_CONFIG = ConfigDict(extra="ignore", str_strip_whitespace=True)
 

@@ -38,8 +38,17 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from app.api.deps import get_tenant_scope  # noqa: E402
 from app.core import security  # noqa: E402
+from app.db import doctors as doctors_provisioning  # noqa: E402
 from app.db.client import get_supabase  # noqa: E402
 from app.main import app  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _reset_doctor_provisioning_cache() -> None:
+    """Each test gets a fresh store, so the memo of provisioned subjects has to
+    be cleared too — otherwise the second test to use a subject skips the insert
+    and its doctors row never appears."""
+    doctors_provisioning.reset_cache()
 
 
 # ---------------------------------------------------------------------------
@@ -52,6 +61,11 @@ class _Result:
         self.data = data
 
 
+# Sentinels for IS NULL / IS NOT NULL, so they cannot collide with a real value.
+_IS_NULL = object()
+_IS_NOT_NULL = object()
+
+
 class _Query:
     """The subset of postgrest-py's builder that TenantScope relies on."""
 
@@ -62,6 +76,8 @@ class _Query:
         self._payload: dict | None = None
         self._filters: list[tuple[str, Any]] = []
         self._order: tuple[str, bool] | None = None
+        self._conflict_columns: list[str] = ["id"]
+        self._ignore_duplicates = False
 
     def select(self, *_args: Any, **_kwargs: Any) -> "_Query":
         self._op = "select"
@@ -70,6 +86,20 @@ class _Query:
     def insert(self, payload: dict) -> "_Query":
         self._op = "insert"
         self._payload = payload
+        return self
+
+    def upsert(
+        self,
+        payload: dict,
+        *,
+        on_conflict: str = "id",
+        ignore_duplicates: bool = False,
+        **_kwargs: Any,
+    ) -> "_Query":
+        self._op = "upsert"
+        self._payload = payload
+        self._conflict_columns = [c.strip() for c in on_conflict.split(",") if c.strip()]
+        self._ignore_duplicates = ignore_duplicates
         return self
 
     def update(self, payload: dict) -> "_Query":
@@ -85,12 +115,35 @@ class _Query:
         self._filters.append((column, value))
         return self
 
+    def is_(self, column: str, value: Any) -> "_Query":
+        """postgrest's IS filter. Only the NULL form is used, and it is the one
+        that matters here: soft-delete reads all filter deleted_at IS NULL, and a
+        fake that treated that as `== "null"` would match nothing and make every
+        such test pass for the wrong reason."""
+        if value in (None, "null", "NULL"):
+            self._filters.append((column, _IS_NULL))
+        elif value in ("not.null", "NOT NULL"):
+            self._filters.append((column, _IS_NOT_NULL))
+        else:
+            raise AssertionError(f"is_({column!r}, {value!r}) is not supported")
+        return self
+
     def order(self, column: str, desc: bool = False) -> "_Query":
         self._order = (column, desc)
         return self
 
     def _matches(self, row: dict) -> bool:
-        return all(row.get(col) == val for col, val in self._filters)
+        for col, val in self._filters:
+            actual = row.get(col)
+            if val is _IS_NULL:
+                if actual is not None:
+                    return False
+            elif val is _IS_NOT_NULL:
+                if actual is None:
+                    return False
+            elif actual != val:
+                return False
+        return True
 
     def execute(self) -> _Result:
         rows = self._store.setdefault(self._table, [])
@@ -104,6 +157,31 @@ class _Query:
 
         if self._op == "insert":
             assert self._payload is not None
+            row = dict(self._payload)
+            row.setdefault("id", str(uuid.uuid4()))
+            row.setdefault(
+                "created_at", dt.datetime.now(dt.timezone.utc).isoformat()
+            )
+            rows.append(row)
+            return _Result([dict(row)])
+
+        if self._op == "upsert":
+            assert self._payload is not None
+            existing = next(
+                (
+                    r
+                    for r in rows
+                    if all(
+                        r.get(c) == self._payload.get(c) for c in self._conflict_columns
+                    )
+                ),
+                None,
+            )
+            if existing is not None:
+                if self._ignore_duplicates:
+                    return _Result([])
+                existing.update(self._payload)
+                return _Result([dict(existing)])
             row = dict(self._payload)
             row.setdefault("id", str(uuid.uuid4()))
             row.setdefault(

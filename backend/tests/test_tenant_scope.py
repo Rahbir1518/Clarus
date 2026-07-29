@@ -110,6 +110,79 @@ def test_update_with_only_immutable_fields_is_a_no_op(scope):
     assert unchanged["doctor_id"] == ALICE
 
 
+def test_a_referral_records_the_caller_as_its_referrer(fake_db):
+    """referring_doctor_id is set from the token, not the body — a referral whose
+    referrer is whoever the client claimed is worth less than no referrer."""
+    alice = TenantScope(fake_db, ALICE)
+    patient = alice.insert_owned("patients", {"name": "Jane", "phone": "+1555"})
+
+    referral = alice.insert_for_patient(
+        "referrals",
+        patient["id"],
+        {"specialty": "Cardiology", "reason": "Murmur", "referring_doctor_id": BOB},
+    )
+
+    assert referral["referring_doctor_id"] == ALICE
+
+
+def test_prescriber_doctor_id_cannot_be_forged(fake_db):
+    """It is a foreign key to doctors, and the child-table write path used to
+    pass any field through that was not literally named doctor_id. Left unset
+    rather than defaulted to the caller: most prescribers on an intake list are
+    not users of this system, so naming the caller would record a falsehood."""
+    alice = TenantScope(fake_db, ALICE)
+    patient = alice.insert_owned("patients", {"name": "Jane", "phone": "+1555"})
+
+    medication = alice.insert_for_patient(
+        "patient_medications",
+        patient["id"],
+        {"name": "Metformin", "prescriber_doctor_id": BOB},
+    )
+
+    assert medication.get("prescriber_doctor_id") is None
+    # The free-text prescriber is still an ordinary field.
+    assert (
+        alice.insert_for_patient(
+            "patient_medications",
+            patient["id"],
+            {"name": "Lisinopril", "prescriber": "Dr. Outside"},
+        )["prescriber"]
+        == "Dr. Outside"
+    )
+
+
+def test_forged_doctor_foreign_keys_are_stripped_on_update_too(fake_db):
+    alice = TenantScope(fake_db, ALICE)
+    patient = alice.insert_owned("patients", {"name": "Jane", "phone": "+1555"})
+    referral = alice.insert_for_patient(
+        "referrals", patient["id"], {"specialty": "Cardiology", "reason": "Murmur"}
+    )
+
+    updated = alice.update_for_patient(
+        "referrals",
+        patient["id"],
+        referral["id"],
+        {"status": "sent", "referring_doctor_id": BOB},
+    )
+
+    assert updated["status"] == "sent"
+    assert updated["referring_doctor_id"] == ALICE
+
+
+def test_appointments_are_tenant_owned(fake_db):
+    """The table carries doctor_id, so it belongs in TENANT_TABLES; reaching it
+    as a child table would scope it by patient alone."""
+    alice = TenantScope(fake_db, ALICE)
+    patient = alice.insert_owned("patients", {"name": "Jane", "phone": "+1555"})
+
+    appointment = alice.insert_owned(
+        "appointments", {"patient_id": patient["id"], "starts_at": "2026-08-01T14:00:00Z"}
+    )
+
+    assert appointment["doctor_id"] == ALICE
+    assert alice.list_owned("appointments", order_by="starts_at")[0]["id"] == appointment["id"]
+
+
 def test_cross_tenant_mutations_raise_not_found(fake_db):
     alice = TenantScope(fake_db, ALICE)
     bob = TenantScope(fake_db, BOB)
