@@ -82,7 +82,14 @@ You cannot open-source your way out of needing a carrier. PSTN access is a regul
 
 ---
 
-### 🟢 Auth0 — good, early, low-risk swap
+### 🟢 Auth0 — superseded
+
+> **Update:** the project moved from Auth0 to **Clerk**, so the pricing
+> analysis below is now about a vendor no longer in use. The structural
+> argument still applies to Clerk — per-MAU pricing with organizations, MFA and
+> SSO on higher tiers — but the numbers do not. Re-cost before acting on it.
+> The migration itself proved cheap because the tenant key never leaves the
+> `sub` claim and nothing else in the codebase knows which vendor issued it.
 
 Auth0 pricing escalates sharply exactly where you're headed: multi-tenant organizations, MFA, SSO. Those are the expensive tiers, and you need all three for clinics.
 

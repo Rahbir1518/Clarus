@@ -1,8 +1,8 @@
 """Tenant isolation, end to end through the HTTP layer."""
 import pytest
 
-ALICE = "auth0|dr-alice"
-BOB = "auth0|dr-bob"
+ALICE = "user_2alice"
+BOB = "user_2bob"
 
 
 def _create_patient(client, headers, name="Jane Doe", phone="+15551234567", **extra):
@@ -133,6 +133,13 @@ def test_missing_patient_is_404_not_500(client, auth_header):
     assert response.json()["error"]["code"] == "not_found"
 
 
+def test_risk_level_matches_the_database_check_constraint(client, auth_header):
+    """The column allows 'moderate'. A schema/model mismatch here surfaces as a
+    500 from Postgres rather than a 422 from Pydantic, so it is worth pinning."""
+    created = _create_patient(client, auth_header(ALICE), risk_level="moderate")
+    assert created["risk_level"] == "moderate"
+
+
 @pytest.mark.parametrize(
     "payload",
     [
@@ -140,6 +147,8 @@ def test_missing_patient_is_404_not_500(client, auth_header):
         {"name": "No Phone"},                # no phone
         {"name": "", "phone": "+1555"},     # empty name
         {"name": "X", "phone": "+1555", "risk_level": "catastrophic"},
+        # Rejected at the edge rather than by the CHECK constraint.
+        {"name": "X", "phone": "+1555", "risk_level": "medium"},
     ],
 )
 def test_invalid_payloads_are_422(client, auth_header, payload):

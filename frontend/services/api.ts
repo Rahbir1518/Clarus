@@ -1,6 +1,47 @@
 // This is api.ts and this is used for handling requests to the FastAPI backend.
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+// ---------------------------------------------------------------------------
+// Authentication
+//
+// Every request to the backend needs a Clerk session token; without one the
+// API answers 401. Rather than thread a token through thirty-five call sites —
+// where the one that gets missed is a silent bug — `fetch` below SHADOWS the
+// global `fetch` for this entire module. Calls read exactly as they always
+// did, and there is no version of them that forgets the header.
+//
+// Clerk's `getToken` lives behind a React hook, which a plain module cannot
+// call. ClerkTokenBridge (mounted once in app/layout.tsx) registers it here at
+// startup; see app/providers/ClerkTokenBridge.tsx.
+// ---------------------------------------------------------------------------
+
+type TokenGetter = () => Promise<string | null>;
+
+let getAuthToken: TokenGetter | null = null;
+
+export function setAuthTokenGetter(getter: TokenGetter | null) {
+  getAuthToken = getter;
+}
+
+async function fetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+  // Clerk session tokens expire after about a minute and the SDK refreshes
+  // them in the background, so fetch one per request rather than caching.
+  const token = getAuthToken ? await getAuthToken() : null;
+
+  const headers = new Headers(init.headers);
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+  // Deliberately no Content-Type default: the upload calls send FormData, and
+  // setting it by hand would clobber the multipart boundary the browser adds.
+  return globalThis.fetch(input, { ...init, headers });
+}
+
+// The event stream needs the same header on a request this module does not
+// make. Exported rather than duplicated: a second copy of the token logic is a
+// second place for it to drift.
+export { fetch as authorizedFetch };
 
 // ---------------------------------------------------------------------------
 // Lab event

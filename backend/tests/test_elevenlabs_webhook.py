@@ -253,7 +253,7 @@ def _post(client, body: bytes, *, header: str | None = None):
 
 def test_route_rejects_unsigned_request(unauthenticated_client, fake_db):
     fake_db.store["call_logs"] = [
-        {"id": "log-1", "doctor_id": "auth0|d1", "conversation_id": "conv_test_1"}
+        {"id": "log-1", "doctor_id": "user_2d1", "conversation_id": "conv_test_1"}
     ]
     response = unauthenticated_client.post(
         "/api/elevenlabs/webhook", content=_body()
@@ -265,7 +265,7 @@ def test_route_rejects_unsigned_request(unauthenticated_client, fake_db):
 
 def test_route_rejects_forged_signature(unauthenticated_client, fake_db):
     fake_db.store["call_logs"] = [
-        {"id": "log-1", "doctor_id": "auth0|d1", "conversation_id": "conv_test_1"}
+        {"id": "log-1", "doctor_id": "user_2d1", "conversation_id": "conv_test_1"}
     ]
     body = _body()
     response = _post(
@@ -279,7 +279,7 @@ def test_route_rejects_forged_signature(unauthenticated_client, fake_db):
 
 def test_route_records_outcome_on_valid_signature(unauthenticated_client, fake_db):
     fake_db.store["call_logs"] = [
-        {"id": "log-1", "doctor_id": "auth0|d1", "conversation_id": "conv_test_1"}
+        {"id": "log-1", "doctor_id": "user_2d1", "conversation_id": "conv_test_1"}
     ]
     assert _post(unauthenticated_client, _body()).status_code == 204
 
@@ -296,13 +296,13 @@ def test_route_records_outcome_on_valid_signature(unauthenticated_client, fake_d
 def test_route_cannot_reassign_a_call_to_another_tenant(unauthenticated_client, fake_db):
     """A signed payload still must not be able to move rows between doctors."""
     fake_db.store["call_logs"] = [
-        {"id": "log-1", "doctor_id": "auth0|victim", "conversation_id": "conv_test_1"}
+        {"id": "log-1", "doctor_id": "user_2victim", "conversation_id": "conv_test_1"}
     ]
-    body = _body(doctor_id="auth0|attacker", patient_id="patient-of-attacker")
+    body = _body(doctor_id="user_2attacker", patient_id="patient-of-attacker")
     assert _post(unauthenticated_client, body).status_code == 204
 
     row = fake_db.store["call_logs"][0]
-    assert row["doctor_id"] == "auth0|victim"
+    assert row["doctor_id"] == "user_2victim"
     assert row.get("patient_id") != "patient-of-attacker"
 
 
@@ -314,7 +314,7 @@ def test_route_acknowledges_unknown_conversation(unauthenticated_client, fake_db
 
 def test_route_ignores_other_event_types(unauthenticated_client, fake_db):
     fake_db.store["call_logs"] = [
-        {"id": "log-1", "doctor_id": "auth0|d1", "conversation_id": "conv_test_1"}
+        {"id": "log-1", "doctor_id": "user_2d1", "conversation_id": "conv_test_1"}
     ]
     body = json.dumps({"type": "post_call_audio", "data": {}}).encode()
     assert _post(unauthenticated_client, body).status_code == 204
@@ -323,7 +323,7 @@ def test_route_ignores_other_event_types(unauthenticated_client, fake_db):
 
 def test_route_rejects_replayed_request(unauthenticated_client, fake_db):
     fake_db.store["call_logs"] = [
-        {"id": "log-1", "doctor_id": "auth0|d1", "conversation_id": "conv_test_1"}
+        {"id": "log-1", "doctor_id": "user_2d1", "conversation_id": "conv_test_1"}
     ]
     body = _body()
     stale = sign_payload(body, SECRET, int(time.time()) - 3600)

@@ -17,9 +17,8 @@ from typing import Any
 
 import pytest
 
-TEST_DOMAIN = "clarus-test.us.auth0.com"
-TEST_AUDIENCE = "https://api.clarus.test"
-TEST_ISSUER = f"https://{TEST_DOMAIN}/"
+TEST_ISSUER = "https://clarus-test.clerk.accounts.dev"
+TEST_AUTHORIZED_PARTY = "http://localhost:3000"
 TEST_WEBHOOK_SECRET = "wsec_test_secret"
 
 # Must be set before app.core.config resolves its cached Settings.
@@ -27,8 +26,8 @@ os.environ.update(
     {
         "SUPABASE_URL": "https://test.supabase.co",
         "SUPABASE_SERVICE_ROLE_KEY": "test-service-role-key",
-        "AUTH0_DOMAIN": TEST_DOMAIN,
-        "AUTH0_AUDIENCE": TEST_AUDIENCE,
+        "CLERK_ISSUER": TEST_ISSUER,
+        "CLERK_AUTHORIZED_PARTIES": TEST_AUTHORIZED_PARTY,
         "ENVIRONMENT": "test",
         "ELEVENLABS_WEBHOOK_SECRET": TEST_WEBHOOK_SECRET,
     }
@@ -40,6 +39,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from app.api.deps import get_tenant_scope  # noqa: E402
 from app.core import security  # noqa: E402
+from app.db import doctors as doctors_db  # noqa: E402
 from app.db.client import get_supabase  # noqa: E402
 from app.main import app  # noqa: E402
 
@@ -62,8 +62,9 @@ class _Query:
         self._table = table
         self._op: str | None = None
         self._payload: dict | None = None
-        self._filters: list[tuple[str, Any]] = []
+        self._filters: list[tuple[str, str, Any]] = []
         self._order: tuple[str, bool] | None = None
+        self._limit: int | None = None
 
     def select(self, *_args: Any, **_kwargs: Any) -> "_Query":
         self._op = "select"
@@ -84,15 +85,36 @@ class _Query:
         return self
 
     def eq(self, column: str, value: Any) -> "_Query":
-        self._filters.append((column, value))
+        self._filters.append(("eq", column, value))
+        return self
+
+    def is_(self, column: str, value: Any) -> "_Query":
+        # postgrest spells IS NULL as the literal string "null".
+        self._filters.append(("is", column, value))
         return self
 
     def order(self, column: str, desc: bool = False) -> "_Query":
         self._order = (column, desc)
         return self
 
+    def limit(self, count: int) -> "_Query":
+        self._limit = count
+        return self
+
     def _matches(self, row: dict) -> bool:
-        return all(row.get(col) == val for col, val in self._filters)
+        for op, col, val in self._filters:
+            if op == "eq":
+                if row.get(col) != val:
+                    return False
+            elif op == "is":
+                if val in ("null", None):
+                    if row.get(col) is not None:
+                        return False
+                elif row.get(col) is not val:
+                    return False
+            else:  # pragma: no cover — guards a typo in a new filter
+                raise AssertionError(f"unsupported filter {op!r}")
+        return True
 
     def execute(self) -> _Result:
         rows = self._store.setdefault(self._table, [])
@@ -102,6 +124,8 @@ class _Query:
             if self._order:
                 column, desc = self._order
                 found.sort(key=lambda r: str(r.get(column) or ""), reverse=desc)
+            if self._limit is not None:
+                found = found[: self._limit]
             return _Result(found)
 
         if self._op == "insert":
@@ -165,27 +189,33 @@ def _patch_jwks(monkeypatch: pytest.MonkeyPatch, signing_key: rsa.RSAPrivateKey)
 
 @pytest.fixture
 def make_token(signing_key: rsa.RSAPrivateKey):
-    """Mint a real RS256 token. Defaults are valid; override to make it invalid."""
+    """Mint a real RS256 token shaped like a Clerk session token.
+
+    Defaults are valid; override to make it invalid. Note the absence of `aud`:
+    that matches Clerk, which omits the claim unless a JWT template adds one,
+    and it means these tests exercise the same code path production does.
+    """
 
     def _make(
-        subject: str = "auth0|doctor-default",
+        subject: str = "user_default",
         *,
-        audience: str = TEST_AUDIENCE,
         issuer: str = TEST_ISSUER,
-        expires_in: int = 3600,
-        scope: str = "",
+        azp: str | None = TEST_AUTHORIZED_PARTY,
+        expires_in: int = 60,
+        not_before: int = 0,
         **extra_claims: Any,
     ) -> str:
         now = dt.datetime.now(dt.timezone.utc)
         claims: dict[str, Any] = {
             "sub": subject,
-            "aud": audience,
             "iss": issuer,
             "iat": now,
+            "nbf": now + dt.timedelta(seconds=not_before),
             "exp": now + dt.timedelta(seconds=expires_in),
+            "sid": "sess_test",
         }
-        if scope:
-            claims["scope"] = scope
+        if azp is not None:
+            claims["azp"] = azp
         claims.update(extra_claims)
         return jwt.encode(claims, signing_key, algorithm="RS256")
 
@@ -194,7 +224,7 @@ def make_token(signing_key: rsa.RSAPrivateKey):
 
 @pytest.fixture
 def auth_header(make_token):
-    def _header(subject: str = "auth0|doctor-default", **kwargs: Any) -> dict[str, str]:
+    def _header(subject: str = "user_default", **kwargs: Any) -> dict[str, str]:
         return {"Authorization": f"Bearer {make_token(subject, **kwargs)}"}
 
     return _header
@@ -203,6 +233,14 @@ def auth_header(make_token):
 # ---------------------------------------------------------------------------
 # Client
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _reset_doctor_cache() -> None:
+    """Each test gets a fresh FakeSupabase, so the provisioning cache — which
+    is process-global — would otherwise report subjects from an earlier test
+    as already provisioned against a store that has never seen them."""
+    doctors_db.reset_cache()
 
 
 @pytest.fixture
@@ -231,7 +269,7 @@ def unauthenticated_client(fake_db: FakeSupabase):
 __all__ = [
     "FakeSupabase",
     "get_tenant_scope",
-    "TEST_AUDIENCE",
+    "TEST_AUTHORIZED_PARTY",
     "TEST_ISSUER",
     "TEST_WEBHOOK_SECRET",
 ]

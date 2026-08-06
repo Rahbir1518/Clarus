@@ -5,8 +5,8 @@ from app.core.errors import NotFound
 from app.db.tenancy import TenantScope
 from tests.conftest import FakeSupabase
 
-ALICE = "auth0|dr-alice"
-BOB = "auth0|dr-bob"
+ALICE = "user_2alice"
+BOB = "user_2bob"
 
 
 @pytest.fixture
@@ -108,6 +108,120 @@ def test_update_with_only_immutable_fields_is_a_no_op(scope):
     )
     assert unchanged["id"] == patient["id"]
     assert unchanged["doctor_id"] == ALICE
+
+
+# -- foreign keys pointing out of the tenant --------------------------------
+#
+# Each of these writes a row the caller genuinely owns. The row is not the
+# problem; where it points is.
+
+
+def test_a_referral_cannot_be_attributed_to_another_doctor(fake_db):
+    """referring_doctor_id is a plain FK to doctors, so any subject satisfies
+    the database. Alice's own patient, Alice's own referral — and Bob's name on
+    it as the clinician who made it."""
+    alice = TenantScope(fake_db, ALICE)
+    patient = alice.insert_owned("patients", {"name": "Jane", "phone": "+1555"})
+
+    with pytest.raises(NotFound):
+        alice.insert_for_patient(
+            "referrals",
+            patient["id"],
+            {"specialty": "cardiology", "reason": "chest pain",
+             "urgency": "emergent", "referring_doctor_id": BOB},
+        )
+
+
+def test_a_referral_may_name_the_caller(fake_db):
+    alice = TenantScope(fake_db, ALICE)
+    patient = alice.insert_owned("patients", {"name": "Jane", "phone": "+1555"})
+
+    referral = alice.insert_for_patient(
+        "referrals",
+        patient["id"],
+        {"specialty": "cardiology", "reason": "chest pain",
+         "referring_doctor_id": ALICE},
+    )
+    assert referral["referring_doctor_id"] == ALICE
+
+
+def test_a_prescription_cannot_be_attributed_to_another_doctor(fake_db):
+    alice = TenantScope(fake_db, ALICE)
+    patient = alice.insert_owned("patients", {"name": "Jane", "phone": "+1555"})
+
+    with pytest.raises(NotFound):
+        alice.insert_for_patient(
+            "patient_medications",
+            patient["id"],
+            {"name": "warfarin", "prescriber_doctor_id": BOB},
+        )
+
+
+def test_a_row_cannot_reference_another_tenants_workflow(fake_db):
+    alice = TenantScope(fake_db, ALICE)
+    bob = TenantScope(fake_db, BOB)
+
+    theirs = bob.insert_owned("workflows", {"name": "Bob's protocol"})
+
+    with pytest.raises(NotFound):
+        alice.insert_owned(
+            "call_logs", {"status": "pending", "workflow_id": theirs["id"]}
+        )
+
+
+def test_a_reference_cannot_be_smuggled_in_by_update(fake_db):
+    """The insert path is not the only way in — an update carries the same
+    foreign keys."""
+    alice = TenantScope(fake_db, ALICE)
+    bob = TenantScope(fake_db, BOB)
+
+    theirs = bob.insert_owned("workflows", {"name": "Bob's protocol"})
+    log = alice.insert_owned("call_logs", {"status": "pending"})
+
+    with pytest.raises(NotFound):
+        alice.update_owned("call_logs", log["id"], {"workflow_id": theirs["id"]})
+
+
+def test_an_appointment_cannot_reference_another_tenants_call_log(fake_db):
+    alice = TenantScope(fake_db, ALICE)
+    bob = TenantScope(fake_db, BOB)
+
+    theirs = bob.insert_owned("call_logs", {"status": "done"})
+    mine = alice.insert_owned("patients", {"name": "Jane", "phone": "+1555"})
+
+    with pytest.raises(NotFound):
+        alice.insert_owned(
+            "appointments",
+            {"patient_id": mine["id"], "starts_at": "2030-01-01T09:00:00Z",
+             "call_log_id": theirs["id"]},
+        )
+
+
+# -- the allowlist ----------------------------------------------------------
+
+
+def test_webhook_correlation_keys_are_not_client_writable(scope, fake_db):
+    """conversation_id resolves an inbound provider webhook to one call log,
+    under a unique index. A caller who could set it could squat the id of a
+    call they do not own and receive its transcript."""
+    scope.insert_owned(
+        "call_logs",
+        {"status": "pending", "conversation_id": "conv_someone_else",
+         "transcript": "forged"},
+    )
+    stored = fake_db.store["call_logs"][0]
+    assert "conversation_id" not in stored
+    assert "transcript" not in stored
+
+
+def test_upload_provenance_comes_from_the_token(scope, fake_db):
+    patient = scope.insert_owned("patients", {"name": "Jane", "phone": "+1555"})
+    scope.insert_for_patient(
+        "pdf_documents",
+        patient["id"],
+        {"filename": "labs.pdf", "uploaded_by": BOB},
+    )
+    assert fake_db.store["pdf_documents"][0]["uploaded_by"] == ALICE
 
 
 def test_cross_tenant_mutations_raise_not_found(fake_db):

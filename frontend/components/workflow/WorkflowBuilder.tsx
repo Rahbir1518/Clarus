@@ -4,7 +4,7 @@ import '@xyflow/react/dist/style.css';
 
 import { useState, useCallback, useRef, useEffect, type DragEvent } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { useAuth0 } from '@auth0/auth0-react';
+import { useUser } from '@clerk/nextjs';
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -151,7 +151,7 @@ const EXAMPLE_EDGES: Edge[] = [
 
 function FlowContent() {
   const { screenToFlowPosition, fitView } = useReactFlow();
-  const { user } = useAuth0();
+  const { user } = useUser();
   const searchParams = useSearchParams();
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
@@ -500,7 +500,16 @@ function FlowContent() {
     setWorkflowName(name);
     setWorkflowDescription(description);
 
-    const doctorId = user?.sub ?? 'anonymous';
+    // No fallback string. The old `?? 'anonymous'` wrote records under an
+    // owner that does not exist, permanently orphaning them; the backend now
+    // takes the tenant from the token and ignores this field entirely, and the
+    // doctors foreign key would reject the fake id anyway.
+    const doctorId = user?.id;
+    if (!doctorId) {
+      setSaveStatus('error');
+      setTimeout(() => setSaveStatus('idle'), 3000);
+      return;
+    }
 
     try {
       if (savedWorkflowId) {
@@ -571,8 +580,7 @@ function FlowContent() {
     setNewPatientPhone('');
     setLoadingPatients(true);
     try {
-      const doctorId = user?.sub ?? undefined;
-      const data = await listPatients(doctorId);
+      const data = await listPatients(user?.id);
       setPatients(Array.isArray(data) ? data : []);
     } catch {
       setPatients([]);
@@ -585,11 +593,12 @@ function FlowContent() {
     if (!newPatientName.trim() || !newPatientPhone.trim()) return;
     setAddingPatient(true);
     try {
-      const doctorId = user?.sub ?? 'anonymous';
       const created = await createPatient({
         name: newPatientName.trim(),
         phone: newPatientPhone.trim(),
-        doctor_id: doctorId,
+        // Ignored by the backend, which uses the token subject. Sent only
+        // because the request type still declares it.
+        doctor_id: user?.id ?? '',
       });
       setPatients((prev) => [created, ...prev]);
       setSelectedPatientId(created.id);

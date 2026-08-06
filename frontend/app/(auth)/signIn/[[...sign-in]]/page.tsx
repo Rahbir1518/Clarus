@@ -1,29 +1,21 @@
-"use client";
+import { SignIn } from "@clerk/nextjs";
 
-import { useAuth0 } from "@auth0/auth0-react";
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
-
-export default function SignIn() {
-  const { loginWithRedirect, isAuthenticated, isLoading } = useAuth0();
-  const router = useRouter();
-
-  useEffect(() => {
-    if (isLoading) return;
-
-    if (isAuthenticated) {
-      router.push("/dashboard");
-      return;
-    }
-
-    loginWithRedirect({
-      appState: { returnTo: "/dashboard" },
-    });
-  }, [isLoading, isAuthenticated, loginWithRedirect, router]);
-
+/**
+ * Clerk renders and handles the whole flow here. The catch-all segment is
+ * required: Clerk routes its own sub-steps (verification, factor two, reset)
+ * as child paths of this one.
+ *
+ * No "use client" — the component is rendered on the server and hydrates
+ * itself, so the sign-in form is not gated behind a JS bundle.
+ */
+export default function SignInPage() {
   return (
-    <div className="flex items-center justify-center min-h-screen">
-      <p className="text-lg">Redirecting to login...</p>
+    <div className="flex min-h-screen items-center justify-center p-6">
+      <SignIn
+        signUpUrl="/signUp"
+        forceRedirectUrl="/dashboard"
+        fallbackRedirectUrl="/dashboard"
+      />
     </div>
   );
 }

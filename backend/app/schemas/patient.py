@@ -9,7 +9,10 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-RiskLevel = Literal["low", "medium", "high"]
+# Must stay in step with the CHECK constraint on patients.risk_level. The
+# middle value is "moderate", not "medium": mismatched, every write carrying it
+# fails in the database as a 500 rather than in Pydantic as a 422.
+RiskLevel = Literal["low", "moderate", "high"]
 
 _REQUEST_CONFIG = ConfigDict(extra="ignore", str_strip_whitespace=True)
 

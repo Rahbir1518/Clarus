@@ -25,6 +25,6 @@ def ready() -> dict:
         "environment": settings.environment,
         "checks": {
             "supabase_configured": bool(settings.supabase_url),
-            "auth0_configured": bool(settings.auth0_domain and settings.auth0_audience),
+            "clerk_configured": bool(settings.clerk_issuer),
         },
     }

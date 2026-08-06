@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useAuth0 } from "@auth0/auth0-react";
+import { useUser } from "@clerk/nextjs";
 import { listCallLogs } from "@/services/api";
 
 import { cn } from "@/lib/utils";
@@ -25,8 +25,8 @@ const statusConfig: Record<string, { label: string; icon: React.ComponentType<{ 
 };
 
 export default function AuditLogPage() {
-  const { user } = useAuth0();
-  const doctorId = user?.sub;
+  const { user } = useUser();
+  const doctorId = user?.id;
 
   const [callLogs, setCallLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);

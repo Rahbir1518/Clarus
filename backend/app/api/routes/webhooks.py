@@ -15,6 +15,7 @@ from app.api.deps import RawBodyDep, SupabaseDep
 from app.core.config import get_settings
 from app.core.errors import NotFound
 from app.db.system import update_call_log_by_conversation
+from app.events.broker import Event, broker
 from app.integrations.elevenlabs.webhook import (
     WebhookVerificationError,
     loads_raw,
@@ -90,7 +91,7 @@ def elevenlabs_post_call(
     }
 
     try:
-        update_call_log_by_conversation(client, result.conversation_id, updates)
+        row = update_call_log_by_conversation(client, result.conversation_id, updates)
     except NotFound:
         # A conversation we have no record of. Worth investigating — it means a
         # call was placed that we did not log — but not worth a retry.
@@ -105,5 +106,16 @@ def elevenlabs_post_call(
         result.call_outcome,
         result.patient_confirmed,
         result.needs_human_review,
+    )
+
+    # Nudge any open stream belonging to the tenant that owns this call. The id
+    # comes from the stored row, never from the payload — the webhook is
+    # unauthenticated, so nothing it sends may decide who gets told.
+    #
+    # After the write and after the log line: a notification is worth nothing
+    # if the re-fetch it triggers cannot yet see the change, and publishing
+    # must not be able to fail the webhook.
+    broker.publish(
+        row.get("doctor_id", ""), Event("call_log.updated", str(row.get("id", "")))
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

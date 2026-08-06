@@ -20,11 +20,26 @@ class Settings(BaseSettings):
     supabase_url: str
     supabase_service_role_key: str
 
-    auth0_domain: str
-    auth0_audience: str
+    # The Clerk Frontend API origin, no trailing slash. Development instances
+    # look like https://<slug>.clerk.accounts.dev; production instances like
+    # https://clerk.<yourdomain>.com. This is the `iss` claim of every session
+    # token and the root of the JWKS URL, so it is the whole trust anchor.
+    clerk_issuer: str
 
     # --- Optional ----------------------------------------------------------
     environment: str = "development"
+
+    # Comma-separated origins allowed to present a token, matched against the
+    # `azp` claim. Clerk mints session tokens scoped to the origin that asked
+    # for them, so checking this stops a token lifted from a different site
+    # that shares the same Clerk instance from working against this API.
+    # Empty disables the check — acceptable in development, not in production.
+    clerk_authorized_parties: str = ""
+
+    # Only set this if you issue tokens from a Clerk JWT template that defines
+    # an audience. Default Clerk session tokens carry no `aud` claim at all,
+    # and requiring one would reject every valid token.
+    clerk_audience: str = ""
 
     # Comma-separated. Kept as a string rather than list[str] because
     # pydantic-settings parses complex types out of the environment as JSON,
@@ -56,12 +71,12 @@ class Settings(BaseSettings):
     webhook_tolerance_seconds: int = 300
 
     @property
-    def auth0_issuer(self) -> str:
-        return f"https://{self.auth0_domain}/"
+    def clerk_jwks_url(self) -> str:
+        return f"{self.clerk_issuer.rstrip('/')}/.well-known/jwks.json"
 
     @property
-    def auth0_jwks_url(self) -> str:
-        return f"https://{self.auth0_domain}/.well-known/jwks.json"
+    def clerk_authorized_party_list(self) -> list[str]:
+        return [p.strip() for p in self.clerk_authorized_parties.split(",") if p.strip()]
 
     @property
     def cors_origin_list(self) -> list[str]:

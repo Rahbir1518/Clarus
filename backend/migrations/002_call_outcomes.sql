@@ -7,9 +7,21 @@
 -- regex over the transcript whenever it needed to know whether the patient had
 -- agreed, which is how it ended up booking appointments off the word "yes"
 -- appearing in the agent's own dialogue.
+--
+-- Numbered 002 because it originally shipped as 001 and was displaced when the
+-- RLS migration took that number. Applying it after 001_rls.sql is correct and
+-- needs nothing further: RLS is enabled per table rather than per column, the
+-- policies on call_logs key on doctor_id, which is untouched here, and new
+-- columns inherit the table's existing grants — so Lock 1 covers them without
+-- this file restating anything.
+--
+-- Apply after 001_rls.sql:
+--     psql "$DATABASE_URL" -f migrations/002_call_outcomes.sql
 -- ===========================================================================
 
 BEGIN;
+
+SET search_path = public, pg_temp;
 
 ALTER TABLE call_logs
     -- Everything the agent extracted, exactly as received. Kept verbatim so a

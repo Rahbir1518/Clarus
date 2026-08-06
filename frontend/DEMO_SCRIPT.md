@@ -26,7 +26,7 @@ Let me show you.
 
 ## 5. Adding Patients from PDF (~10 s)
 
-Everything's behind Auth0, so patient data stays secure. Doctors can add patients manually, but you can also just drop in a PDF of a medical record — Clarus parses it, updates existing patients or creates new ones automatically. Zero data entry.
+Everything is behind Clerk, so patient data stays secure. Doctors can add patients manually, but you can also just drop in a PDF of a medical record — Clarus parses it, updates existing patients or creates new ones automatically. Zero data entry.
 
 ---
 

@@ -20,7 +20,7 @@ business logic yet.
 | Area | Status |
 |---|---|
 | Schema, all 11 tables, in version control | ✅ `migrations/000_initial_schema.sql` |
-| Auth0 JWT verification (RS256, JWKS, audience + issuer) | ✅ `app/core/security.py` |
+| Clerk JWT verification (RS256, JWKS, issuer + authorized party) | ✅ `app/core/security.py` |
 | Tenant isolation that cannot be forgotten | ✅ `app/db/tenancy.py` |
 | Fail-fast configuration | ✅ `app/core/config.py` |
 | Error envelope that does not leak internals | ✅ `app/core/errors.py` |
@@ -72,9 +72,9 @@ unrecoverable is that it only ever existed as clicks in a dashboard.
 `GET /api/patients` with no parameter at all returned every patient in the
 database.
 
-Now `app/core/security.py` verifies an Auth0 RS256 token against the tenant's
-JWKS — checking signature, audience, issuer and expiry — and the `sub` claim
-becomes the tenant key. `app/api/deps.py` is the only place a `TenantScope` is
+Now `app/core/security.py` verifies a Clerk RS256 session token against the
+instance's JWKS — checking signature, issuer, expiry, not-before and the
+authorized party — and the `sub` claim becomes the tenant key. `app/api/deps.py` is the only place a `TenantScope` is
 built, so a handler has no way to name a tenant other than the caller.
 
 Request bodies may still contain `doctor_id`; the frontend sends one. It is
@@ -98,7 +98,7 @@ tenant's record exists.
 ### 3. Configuration failures happen at boot
 
 `get_settings()` resolves at import in `app/main.py`. A missing
-`SUPABASE_URL` or `AUTH0_AUDIENCE` kills the process on startup rather than
+`SUPABASE_URL` or `CLERK_ISSUER` kills the process on startup rather than
 producing a 500 on whichever request first needed it.
 
 ---
@@ -203,17 +203,17 @@ event. Everything else goes to `needs_review`.
 
 Two changes, both outside this directory:
 
-1. `frontend/app/providers/Auth0ProviderWrapper.tsx` must request an audience
-   matching `AUTH0_AUDIENCE`. Without it Auth0 issues an opaque token instead
-   of a JWT, and every request here will 401.
-
-   ```tsx
-   authorizationParams={{ audience: process.env.NEXT_PUBLIC_AUTH0_AUDIENCE, ... }}
-   ```
+1. The frontend and this backend must point at the **same Clerk instance**.
+   `CLERK_ISSUER` here and `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` there come in
+   matched pairs — development and production instances are separate, with
+   separate signing keys, and crossing them 401s every request.
 
 2. `frontend/services/api.ts` must send `Authorization: Bearer <token>` from
-   `getAccessTokenSilently()`. It currently sends no auth header on any of its
-   ~35 calls.
+   Clerk's `getToken()`. Tokens expire after about a minute, so fetch one per
+   request rather than caching it.
+
+3. If `CLERK_AUTHORIZED_PARTIES` is set, the frontend's origin must be in it —
+   Clerk puts that origin in the `azp` claim and this backend checks it.
 
 Until both are done the frontend will receive 401s. That is the correct
 behaviour, not a regression.

@@ -14,6 +14,12 @@ lists, and none can be steered into reading a row of the caller's choosing.
 
 Adding a function that takes a table name, or that returns more than one row,
 removes that property. Don't.
+
+Neither function filters `deleted_at IS NULL`, unlike every read in
+TenantScope. That is deliberate: the call really was placed, and its outcome
+belongs on the record even if the row was deleted while the phone was ringing.
+Nothing here returns the row to the webhook caller, and the soft-deleted log
+stays invisible to the API, so completing it leaks nothing.
 """
 from __future__ import annotations
 

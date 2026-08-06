@@ -1,6 +1,6 @@
 "use client";
 
-import { useAuth0 } from "@auth0/auth0-react";
+import { useClerk, useUser } from "@clerk/nextjs";
 import {
   Search,
   Bell,
@@ -43,7 +43,8 @@ const PAGES: SearchResult[] = [
 ];
 
 export function Topbar() {
-  const { user, logout } = useAuth0();
+  const { user } = useUser();
+  const { signOut } = useClerk();
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
@@ -59,8 +60,9 @@ export function Topbar() {
   const notifRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const doctorId = user?.sub;
-  const displayName = user?.name || user?.email?.split("@")[0] || "Doctor";
+  const doctorId = user?.id;
+  const displayName =
+    user?.fullName || user?.primaryEmailAddress?.emailAddress?.split("@")[0] || "Doctor";
   const initials = displayName
     .split(" ")
     .map((n: string) => n[0])
@@ -390,7 +392,9 @@ export function Topbar() {
               <div className="absolute right-0 top-full z-50 mt-1 w-52 rounded-xl border border-border bg-card shadow-lg">
                 <div className="border-b border-border px-4 py-3">
                   <p className="text-sm font-medium">{displayName}</p>
-                  <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {user?.primaryEmailAddress?.emailAddress}
+                  </p>
                 </div>
                 <div className="p-1">
                   <Link
@@ -402,7 +406,7 @@ export function Topbar() {
                     Settings
                   </Link>
                   <button
-                    onClick={() => logout({ logoutParams: { returnTo: window.location.origin } })}
+                    onClick={() => signOut({ redirectUrl: "/" })}
                     className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-destructive transition-colors hover:bg-destructive/10"
                   >
                     <LogOut className="size-4" />

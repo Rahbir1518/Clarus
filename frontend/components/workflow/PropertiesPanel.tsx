@@ -77,7 +77,7 @@ const FIELD_PLACEHOLDERS: Record<string, string> = {
   staff_id: 'Staff member ID',
   task_type: 'e.g. follow_up, review',
   due_date: 'YYYY-MM-DD',
-  risk_level: 'low, medium, or high',
+  risk_level: 'low, moderate, or high',
   lab_result_summary: 'Summary for the AI call agent...',
 };
 

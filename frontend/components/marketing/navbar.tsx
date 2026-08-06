@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { Menu, X, ArrowUpRight } from "lucide-react";
+import { Show } from "@clerk/nextjs";
 
 const navLinks = [
   { href: "/about", label: "About" },
@@ -12,6 +13,14 @@ const navLinks = [
   { href: "/pricing", label: "Pricing" },
   { href: "/contact", label: "Contact" },
 ];
+
+// The landing page stays public for signed-in users — they may well be here to
+// read the pricing or product pages. Only the call to action changes: sending
+// someone who already has a session to a login form is a dead end.
+const ctaDesktop =
+  "inline-flex items-center gap-1.5 rounded-full bg-foreground px-4 py-1.5 text-sm font-medium text-background transition-opacity hover:opacity-80";
+const ctaMobile =
+  "inline-flex items-center gap-1.5 rounded-full bg-foreground px-4 py-2 text-sm font-medium text-background";
 
 export function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -79,13 +88,18 @@ export function Navbar() {
             </Link>
           ))}
 
-          <Link
-            href="/signIn"
-            className="inline-flex items-center gap-1.5 rounded-full bg-foreground px-4 py-1.5 text-sm font-medium text-background transition-opacity hover:opacity-80"
-          >
-            Log In
-            <ArrowUpRight className="h-3.5 w-3.5" />
-          </Link>
+          <Show when="signed-out">
+            <Link href="/signIn" className={ctaDesktop}>
+              Log In
+              <ArrowUpRight className="h-3.5 w-3.5" />
+            </Link>
+          </Show>
+          <Show when="signed-in">
+            <Link href="/dashboard" className={ctaDesktop}>
+              Dashboard
+              <ArrowUpRight className="h-3.5 w-3.5" />
+            </Link>
+          </Show>
         </div>
 
         {/* Mobile menu button */}
@@ -117,14 +131,26 @@ export function Navbar() {
               </Link>
             ))}
             <div className="mt-2 border-t border-border pt-4">
-              <Link
-                href="/signIn"
-                className="inline-flex items-center gap-1.5 rounded-full bg-foreground px-4 py-2 text-sm font-medium text-background"
-                onClick={() => setMobileOpen(false)}
-              >
-                Log In
-                <ArrowUpRight className="h-3.5 w-3.5" />
-              </Link>
+              <Show when="signed-out">
+                <Link
+                  href="/signIn"
+                  className={ctaMobile}
+                  onClick={() => setMobileOpen(false)}
+                >
+                  Log In
+                  <ArrowUpRight className="h-3.5 w-3.5" />
+                </Link>
+              </Show>
+              <Show when="signed-in">
+                <Link
+                  href="/dashboard"
+                  className={ctaMobile}
+                  onClick={() => setMobileOpen(false)}
+                >
+                  Dashboard
+                  <ArrowUpRight className="h-3.5 w-3.5" />
+                </Link>
+              </Show>
             </div>
           </div>
         </div>

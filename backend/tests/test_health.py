@@ -14,7 +14,7 @@ def test_ready_reports_configuration_without_revealing_it(client):
     body = response.json()
     assert body["checks"] == {
         "supabase_configured": True,
-        "auth0_configured": True,
+        "clerk_configured": True,
     }
 
     # An unauthenticated endpoint must not echo credentials or URLs back.
