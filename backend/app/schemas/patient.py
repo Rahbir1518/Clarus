@@ -5,21 +5,17 @@ sends it in the create payload; `extra="ignore"` drops it on the floor and the
 tenant key is taken from the verified token instead.
 """
 from datetime import date, datetime
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from app.schemas.common import REQUEST_CONFIG as _REQUEST_CONFIG
+from app.schemas.common import blank_to_none as _blank_to_none
 
 # Must stay in step with the CHECK constraint on patients.risk_level. The
 # middle value is "moderate", not "medium": mismatched, every write carrying it
 # fails in the database as a 500 rather than in Pydantic as a 422.
 RiskLevel = Literal["low", "moderate", "high"]
-
-_REQUEST_CONFIG = ConfigDict(extra="ignore", str_strip_whitespace=True)
-
-
-def _blank_to_none(value: Any) -> Any:
-    """HTML form fields submit "" where the API means "no value"."""
-    return None if isinstance(value, str) and not value.strip() else value
 
 
 class PatientCreate(BaseModel):

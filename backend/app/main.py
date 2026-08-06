@@ -10,7 +10,15 @@ from typing import AsyncIterator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import call_logs, events, health, patients, webhooks
+from app.api.routes import (
+    call_logs,
+    clinical,
+    events,
+    health,
+    patients,
+    webhooks,
+    workflows,
+)
 from app.core.config import get_settings
 from app.core.errors import register_error_handlers
 from app.events.broker import broker
@@ -66,6 +74,9 @@ app.add_middleware(
 
 app.include_router(health.router)
 app.include_router(patients.router, prefix="/api")
+app.include_router(clinical.conditions_router, prefix="/api")
+app.include_router(clinical.medications_router, prefix="/api")
+app.include_router(workflows.router, prefix="/api")
 app.include_router(call_logs.router, prefix="/api")
 app.include_router(events.router, prefix="/api")
 # Signature-authenticated, not token-authenticated. See routes/webhooks.py.

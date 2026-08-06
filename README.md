@@ -29,11 +29,15 @@
 > as a record of intended behaviour, not as a description of current code.**
 > The frontend sections are current.
 >
-> What is real right now: the schema in
-> [backend/migrations/000_initial_schema.sql](backend/migrations/000_initial_schema.sql),
-> Clerk JWT verification, enforced tenant isolation, and patients CRUD.
-> Everything else — workflows, call logs, the workflow engine, ElevenLabs,
-> Twilio, Google Calendar and PDF processing — is not yet ported.
+> What is real right now: the schema and Row Level Security in
+> [backend/migrations/](backend/migrations/), Clerk JWT verification, enforced
+> tenant isolation, live updates over SSE, and CRUD for patients, workflows,
+> conditions, medications and call logs. The workflow engine, Google Calendar
+> and PDF processing are not yet built.
+>
+> **[PROGRESS.md](PROGRESS.md)** — what is done, in progress, and left to do.
+> **[backend/STATUS.md](backend/STATUS.md)** — endpoint inventory, migrations to
+> apply, accounts you need, and what is deliberately unbuilt.
 >
 > The old backend remains readable at commit `91382a9`.
 

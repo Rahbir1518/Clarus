@@ -14,23 +14,32 @@ git checkout 91382a9 -- backend                   # restore the whole tree
 
 ## What exists today
 
-This is a foundation, not a feature-complete API. It deliberately carries no
-business logic yet.
+> **[STATUS.md](STATUS.md) is the current record** — full endpoint inventory,
+> which frontend pages work, the migrations to apply and how to verify them,
+> the accounts and credentials you need, and what is deliberately unbuilt.
+> This section is a summary; that file is the one to keep up to date.
 
 | Area | Status |
 |---|---|
-| Schema, all 11 tables, in version control | ✅ `migrations/000_initial_schema.sql` |
+| Schema, all 14 tables, in version control | ✅ `migrations/000_initial_schema.sql` |
+| Row Level Security, verified against the live database | ✅ `migrations/001_rls.sql` |
+| Call outcome columns | ✅ `migrations/002_call_outcomes.sql` |
 | Clerk JWT verification (RS256, JWKS, issuer + authorized party) | ✅ `app/core/security.py` |
 | Tenant isolation that cannot be forgotten | ✅ `app/db/tenancy.py` |
 | Fail-fast configuration | ✅ `app/core/config.py` |
 | Error envelope that does not leak internals | ✅ `app/core/errors.py` |
 | Patients CRUD — the reference vertical slice | ✅ `app/api/routes/patients.py` |
+| Workflows CRUD | ✅ `app/api/routes/workflows.py` |
+| Conditions and medications | ✅ `app/api/routes/clinical.py` |
+| Call log reads, transcript withheld from the list | ✅ `app/api/routes/call_logs.py` |
+| Live updates over SSE, no browser-side database access | ✅ `app/events/broker.py` |
 | ElevenLabs agent definition, in version control | ✅ `agents/appointment_confirmation.yaml` |
 | ElevenLabs client + outbound calling | ✅ `app/integrations/elevenlabs/` |
 | Post-call webhook, signature-verified | ✅ `app/api/routes/webhooks.py` |
-| Test suite (71 tests) | ✅ `tests/` |
-| Workflows, call logs, conditions, medications | ❌ not ported |
-| Workflow engine, Twilio TwiML, Calendar, PDF | ❌ not ported |
+| Test suite (153 tests) | ✅ `tests/` |
+| Workflow engine, `executeWorkflow`, trigger path | ❌ not built |
+| PDF intake, Google Calendar | ❌ not built |
+| Appointments, lab orders, referrals, notifications, reports | ❌ no page calls them — see STATUS.md |
 
 ---
 
