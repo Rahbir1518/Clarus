@@ -31,6 +31,18 @@ class NotFound(Exception):
         self.resource = resource
 
 
+class Conflict(Exception):
+    """The request is well-formed but contradicts the current state.
+
+    Distinct from NotFound because it says nothing a caller did not already
+    know: they were told the row exists, by being shown it. Used where a
+    write-once field has already been written.
+    """
+
+    def __init__(self, message: str = "Conflicts with the current state") -> None:
+        super().__init__(message)
+
+
 def _envelope(message: str, *, code: str, extra: dict | None = None) -> dict:
     body = {"error": {"code": code, "message": message}}
     if extra:
@@ -44,6 +56,13 @@ def register_error_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=status.HTTP_404_NOT_FOUND,
             content=_envelope(str(exc), code="not_found"),
+        )
+
+    @app.exception_handler(Conflict)
+    async def _handle_conflict(_: Request, exc: Conflict) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content=_envelope(str(exc), code="conflict"),
         )
 
     @app.exception_handler(StarletteHTTPException)

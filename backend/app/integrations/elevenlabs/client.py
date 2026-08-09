@@ -19,6 +19,14 @@ logger = logging.getLogger(__name__)
 BASE_URL = "https://api.elevenlabs.io"
 DEFAULT_TIMEOUT = httpx.Timeout(30.0, connect=10.0)
 
+# The only Twilio-specific thing left in this module. ElevenLabs exposes one
+# outbound endpoint per telephony provider; the rest of the call path — the
+# agent, the dynamic variables, the post-call webhook — is identical whichever
+# one is used. Moving to a SIP trunk (a licensed Bangladeshi IPTSP, say) is a
+# change to this constant and nothing else.
+OUTBOUND_CALL_PATH = "/v1/convai/twilio/outbound-call"
+# SIP trunk: "/v1/convai/sip-trunk/outbound-call"
+
 
 class ElevenLabsError(RuntimeError):
     """An ElevenLabs API call failed."""
@@ -98,7 +106,10 @@ class ElevenLabsClient:
         agent_id: str | None = None,
         agent_phone_number_id: str | None = None,
     ) -> dict:
-        """Place an outbound call through the agent's Twilio number.
+        """Place an outbound call through the agent's bound phone number.
+
+        Which carrier that number lives on is ElevenLabs' concern, not this
+        module's — see OUTBOUND_CALL_PATH.
 
         Returns the raw response, which carries `conversation_id` and `callSid`
         when the call is successfully queued.
@@ -124,9 +135,7 @@ class ElevenLabsClient:
             },
         }
 
-        result = self._request(
-            "POST", "/v1/convai/twilio/outbound-call", json=payload
-        )
+        result = self._request("POST", OUTBOUND_CALL_PATH, json=payload)
         if not result.get("success", False):
             raise ElevenLabsError(
                 f"ElevenLabs declined the call: {result.get('message', result)}"
@@ -137,6 +146,29 @@ class ElevenLabsClient:
             result.get("callSid"),
         )
         return result
+
+    def conversation_token(self, agent_id: str | None = None) -> str:
+        """Mint a short-lived token letting a browser open a WebRTC session.
+
+        This exists so the API key never leaves the server. The key can spend
+        money and read every conversation on the account; the token it returns
+        is scoped to one agent and expires on its own.
+
+        Shipping the API key to the browser instead would work, which is
+        exactly why it needs saying: it would also publish it to anyone who
+        opens devtools.
+        """
+        if agent_id is None:
+            require("elevenlabs_agent_id")
+            agent_id = get_settings().elevenlabs_agent_id
+
+        result = self._request(
+            "GET", "/v1/convai/conversation/token", params={"agent_id": agent_id}
+        )
+        token = result.get("token")
+        if not token:
+            raise ElevenLabsError(f"No token in the response: {result}")
+        return token
 
     def get_conversation(self, conversation_id: str) -> dict:
         """Fetch a conversation, including transcript and analysis once done."""

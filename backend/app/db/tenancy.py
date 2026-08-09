@@ -18,7 +18,7 @@ point it at a row you do not own.
 from datetime import datetime, timezone
 from typing import Any, Final
 
-from app.core.errors import NotFound
+from app.core.errors import Conflict, NotFound
 
 # Tables carrying doctor_id directly.
 TENANT_TABLES: Final[frozenset[str]] = frozenset(
@@ -322,6 +322,50 @@ class TenantScope:
             # Either absent, already deleted, or another tenant's. Same answer
             # for all three.
             raise NotFound(table.rstrip("s").replace("_", " ").title())
+        return rows[0]
+
+    def bind_conversation(self, call_log_id: str, conversation_id: str) -> dict:
+        """Attach a provider conversation id to a call log this caller owns.
+
+        A narrow, single-purpose write, and it has its own method rather than a
+        line in WRITABLE_COLUMNS on purpose. conversation_id is the capability
+        app/db/system.py resolves an unauthenticated webhook against: whoever
+        holds one can write a call outcome. If a client could set it through
+        the generic update path, it could point its own call log at someone
+        else's conversation and harvest that call's result.
+
+        So: write-once, scoped to the tenant, and never re-pointed.
+
+        A browser-initiated WebRTC session is why this is needed at all. On the
+        phone path the id comes back from ElevenLabs on the server, but a web
+        session mints it in the browser, so it has to be reported back.
+        """
+        if not conversation_id:
+            raise ValueError("conversation_id must not be empty")
+
+        # Read first, so "already bound" is distinguishable from "not yours".
+        row = self.get_owned("call_logs", call_log_id)
+        existing = row.get("conversation_id")
+        if existing:
+            if existing == conversation_id:
+                return row  # Idempotent: the browser retried.
+            raise Conflict("This call is already bound to another conversation")
+
+        rows = _rows(
+            self._alive(
+                self._client.table("call_logs")
+                .update({"conversation_id": conversation_id})
+                .eq("id", call_log_id)
+                .eq("doctor_id", self._doctor_id)
+                # Lost-update guard. Between the read above and this write,
+                # another request may have bound the same row; the filter makes
+                # the second writer match nothing instead of overwriting.
+                .is_("conversation_id", "null"),
+                "call_logs",
+            ).execute()
+        )
+        if not rows:
+            raise Conflict("This call was bound to a conversation concurrently")
         return rows[0]
 
     def delete_owned(self, table: str, row_id: str) -> None:

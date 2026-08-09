@@ -287,6 +287,51 @@ export async function checkCallStatus(callLogId: string) {
 }
 
 // ---------------------------------------------------------------------------
+// Placing calls
+//
+// Two steps because a WebRTC session is opened by the browser, so ElevenLabs
+// mints the conversation id here rather than on the server. Until bindCall
+// reports it back, the post-call webhook has no row to resolve and the
+// outcome is discarded — so bind on connect, not on hang-up.
+// ---------------------------------------------------------------------------
+
+export type WebCallStarted = {
+  call_log_id: string;
+  token: string;
+  // Every {{placeholder}} the agent speaks. Built server-side from the patient
+  // record; the browser passes it through untouched and must not edit it.
+  dynamic_variables: Record<string, string>;
+};
+
+export async function startWebCall(
+  patientId: string,
+  options: { workflowId?: string; appointmentReason?: string; callbackNumber?: string } = {},
+): Promise<WebCallStarted> {
+  const response = await fetch(`${API_URL}/api/calls/web`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      patient_id: patientId,
+      workflow_id: options.workflowId,
+      appointment_reason: options.appointmentReason,
+      callback_number: options.callbackNumber,
+    }),
+  });
+  if (!response.ok) throw new Error(`Could not start the call (${response.status})`);
+  return response.json();
+}
+
+export async function bindCall(callLogId: string, conversationId: string): Promise<void> {
+  const response = await fetch(`${API_URL}/api/calls/web/${callLogId}/bind`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ conversation_id: conversationId }),
+  });
+  // 409 means this call log is already bound to a different conversation.
+  if (!response.ok) throw new Error(`Could not bind the conversation (${response.status})`);
+}
+
+// ---------------------------------------------------------------------------
 // Patient medications
 // ---------------------------------------------------------------------------
 

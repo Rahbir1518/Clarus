@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import (
     call_logs,
+    calls,
     clinical,
     events,
     health,
@@ -78,6 +79,7 @@ app.include_router(clinical.conditions_router, prefix="/api")
 app.include_router(clinical.medications_router, prefix="/api")
 app.include_router(workflows.router, prefix="/api")
 app.include_router(call_logs.router, prefix="/api")
+app.include_router(calls.router, prefix="/api")
 app.include_router(events.router, prefix="/api")
 # Signature-authenticated, not token-authenticated. See routes/webhooks.py.
 app.include_router(webhooks.router, prefix="/api")

@@ -70,6 +70,13 @@ class Settings(BaseSettings):
     # as a replay.
     webhook_tolerance_seconds: int = 300
 
+    # IANA name, spoken to the agent as {{timezone}} so it can resolve "next
+    # Tuesday" correctly. Also what call_logs.timezone should record. A single
+    # value for now because every patient is in one country; it becomes a
+    # per-patient column the moment that stops being true, and getting it wrong
+    # books appointments at the right clock time on the wrong side of the world.
+    default_timezone: str = "Asia/Dhaka"
+
     @property
     def clerk_jwks_url(self) -> str:
         return f"{self.clerk_issuer.rstrip('/')}/.well-known/jwks.json"

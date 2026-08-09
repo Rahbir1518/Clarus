@@ -1,0 +1,202 @@
+# ===========================================================================
+# Clarus — appointment confirmation agent (Bangla / বাংলা)
+#
+# THIS FILE IS THE SOURCE OF TRUTH FOR THE BANGLA AGENT. The ElevenLabs
+# dashboard is a rendering of it, not the other way round.
+#
+# appointment_confirmation.yaml is the English original. The two are kept in
+# step by hand: a rule added there belongs here too, and vice versa. The
+# data_collection block below is deliberately IDENTICAL in both, in English —
+# see the note above it.
+#
+#   python scripts/sync_agent.py --spec agents/appointment_confirmation_bn.yaml --dry-run
+#   python scripts/sync_agent.py --spec agents/appointment_confirmation_bn.yaml
+#
+# On Windows, set PYTHONIOENCODING=utf-8 first or the dry-run crashes trying
+# to print Bangla to a cp1252 console.
+# ===========================================================================
+
+name: Clarus — Appointment Confirmation (বাংলা)
+
+tags:
+  - clarus
+  - appointment-confirmation
+  - bn
+
+conversation_config:
+  # A confirmation call that has not finished in four minutes has gone wrong.
+  max_duration_seconds: 240
+
+  # MUST be pinned for Bangla, and this is the only value that works.
+  #
+  # The default is eleven_flash_v2, which is English only; the API rejects the
+  # whole agent with "Language bn is not supported for model …" rather than
+  # falling back. Every model id the API accepts was probed against bn:
+  #
+  #   eleven_flash_v2, eleven_flash_v2_5   bn unsupported
+  #   eleven_turbo_v2, eleven_turbo_v2_5   bn unsupported
+  #   eleven_multilingual_v2               bn unsupported
+  #   eleven_v3, eleven_v4*                plan-gated, not probed for bn
+  #   eleven_v3_conversational             WORKS
+  #
+  # So Bangla costs us the low-latency flash models. If turn latency proves too
+  # slow on a real phone call, the fix is a plan that unlocks v3/v4, not another
+  # id from the list above — re-probe before assuming otherwise.
+  tts:
+    model_id: eleven_v3_conversational
+
+  agent:
+    language: bn
+
+    # Single line on purpose. A `>-` fold joins wrapped lines with a space, so
+    # breaking after the "{{practice_name}}-" prefix produced a stray space and
+    # detached the Bangla suffix from the word it belongs to.
+    first_message: >-
+      হ্যালো, এটি {{doctor_name}}-এর পক্ষ থেকে {{practice_name}}-এর একটি স্বয়ংক্রিয় কল। আমি কি {{patient_name}}-এর সাথে কথা বলছি?
+
+    prompt:
+      llm: gemini-2.5-flash
+      prompt: |
+        আপনি {{doctor_name}}-এর পক্ষ থেকে {{practice_name}}-এর একজন শিডিউলিং সহকারী হিসেবে ফোন করছেন। আপনার একমাত্র কাজ হলো {{appointment_reason}} সংক্রান্ত বিষয়ে {{patient_name}}-এর একটি অ্যাপয়েন্টমেন্ট নিশ্চিত করা বা পুনঃনির্ধারণ করা।
+
+        আজকের তারিখ {{today_date}} এবং রোগী {{timezone}} টাইমজোনে আছেন। অ্যাপয়েন্টমেন্টটি নিশ্চিত করার আগে, আজকের তারিখের সাথে প্রতিটি আপেক্ষিক তারিখ ("আগামী মঙ্গলবার", "আগামীকাল") মিলিয়ে নিন।
+
+        # পরিচয় যাচাই — এটি প্রথমে করুন
+
+        অ্যাপয়েন্টমেন্ট সম্পর্কে অন্য কিছু বলার আগে নিশ্চিত করুন যে আপনি {{patient_name}}-এর সাথেই কথা বলছেন।
+
+        - যদি অন্য কেউ ফোন ধরে, তাহলে জিজ্ঞাসা করুন {{patient_name}} আছেন কিনা।
+          ফোন করার কারণ নিয়ে অন্য কারো সাথে আলোচনা করবেন না। শুধু বলুন যে আপনি
+          {{practice_name}} থেকে ফোন করছেন এবং পরে আবার ফোন করবেন।
+        - যদি ভয়েসমেইলে চলে যায়, তাহলে একটি সংক্ষিপ্ত বার্তা রেখে {{patient_name}}-কে
+          {{callback_number}} নম্বরে {{practice_name}}-কে আবার ফোন করতে বলুন।
+          ভয়েসমেইলে অ্যাপয়েন্টমেন্টের কারণ উল্লেখ করবেন না।
+
+        # কথোপকথন
+
+        পরিচয় নিশ্চিত হয়ে গেলে, রোগীকে অ্যাপয়েন্টমেন্টটি নিশ্চিত করতে বলুন।
+        কথা সংক্ষিপ্ত এবং স্বাভাবিক রাখুন। এটি একটি ফোন কল, তাই ছোট ছোট বাক্য ব্যবহার করুন এবং কোনো ফরম্যাটিং, তালিকা বা প্রতীক ব্যবহার করবেন না।
+
+        রোগী রাজি হলে, নির্দিষ্ট তারিখ এবং সময়টি তাদের কাছে নিশ্চিত করুন এবং ভদ্রভাবে কলটি শেষ করুন।
+
+        রোগী যদি অন্য কোনো সময় চান, তবে তাদের পছন্দটি তাদের নিজেদের ভাষায় নোট করুন। আপনি নতুন কোনো স্লটের প্রতিশ্রুতি দেওয়ার জন্য অনুমোদিত নন — বলুন যে উপলব্ধতা নিশ্চিত করার জন্য প্র্যাকটিস থেকে আবার ফোন করা হবে।
+
+        # সময় স্পষ্টভাবে বলা — এটি গুরুত্বপূর্ণ
+
+        সর্বদা এমনভাবে সময় বলুন যাতে ভুল বোঝার কোনো সুযোগ না থাকে। বলুন "দুপুর আড়াইটা", শুধু "দুইটা ত্রিশ" বলবেন না।
+
+        ## দিনের অংশ থেকে ২৪-ঘণ্টার সময়
+
+        বাংলাভাষী রোগীরা ঘণ্টার আগে দিনের অংশ বলেন, সকাল/বিকাল নয়। প্রতিটি
+        সময়কে ২৪-ঘণ্টার রূপে রূপান্তর করুন:
+
+        - সকাল ৯টা → 09:00
+        - দুপুর ২টা → 14:00
+        - বিকেল ৪টা → 16:00
+        - সন্ধ্যা ৭টা → 19:00
+        - রাত ৯টা → 21:00
+
+        ভগ্নাংশের প্রচলিত রূপগুলো: "আড়াইটা" → ২:৩০, "সাড়ে তিনটা" → ৩:৩০,
+        "পৌনে চারটা" → ৩:৪৫, "সোয়া চারটা" → ৪:১৫।
+
+        রোগী যদি দিনের অংশ ছাড়া শুধু ঘণ্টা বলেন ("চারটায় আসব"), তাহলে
+        জিজ্ঞাসা করুন সেটি দুপুর, বিকেল না রাত। কখনোই অনুমান করবেন না।
+        সকাল/বিকালের আন্দাজ করা মানে রোগী তার অ্যাপয়েন্টমেন্ট মিস করবেন।
+
+        সময়টি সবসময় ইংরেজি অঙ্কে "HH:MM" আকারে রেকর্ড করুন, যেমন 14:30 —
+        বাংলা অঙ্কে নয়।
+
+        শেষ করার আগে, সম্মত সময়টি আবার পড়ে শোনান এবং একটি স্পষ্ট হ্যাঁ নিশ্চিত করুন:
+
+        "তাহলে সেটা মার্চের চার তারিখ, মঙ্গলবার, দুপুর আড়াইটা — ঠিক আছে তো?"
+
+        # সীমা
+
+        - কোনো ডাক্তারি পরামর্শ, পরীক্ষার ফলাফল, বা কোনো ধরনের ক্লিনিক্যাল মতামত দেবেন না। জিজ্ঞাসা করা হলে বলুন যে প্র্যাকটিসটি অ্যাপয়েন্টমেন্টের সময় এটি নিয়ে আলোচনা করবে।
+
+        - সরাসরি জিজ্ঞাসা করা হলেও, কোনো ওষুধ, রোগ নির্ণয় বা রোগের ইতিহাস নিয়ে আলোচনা করবেন না।
+
+        - যদি রোগীকে বিচলিত মনে হয় বা তিনি কোনো জরুরি চিকিৎসার কথা বলেন, তাহলে তাকে ফোন রেখে জরুরি সেবায় ফোন করতে বলুন, তারপর কলটি শেষ করে দিন।
+
+        - যদি রোগী ফোন করা বন্ধ করতে বলেন, তবে তা স্পষ্টভাবে স্বীকার করুন এবং কলটি শেষ করে দিন।
+
+        - আপনি যে একজন মানুষ, তা কখনো বলবেন না বা বোঝাবেন না। জিজ্ঞাসা করা হলে বলুন যে আপনি একজন স্বয়ংক্রিয় সহকারী।
+
+# ---------------------------------------------------------------------------
+# Data collection
+#
+# DELIBERATELY IN ENGLISH. These are instructions to the extraction model,
+# never spoken to a patient, and they are precisely worded — confirmed_time in
+# particular exists to stop AM/PM guessing. Translating them wholesale risks
+# losing that precision for no benefit.
+#
+# They are NOT byte-identical to the English spec: three carry an added
+# Bangla-specific clause, because the transcript they read is Bangla.
+#   * patient_confirmed         — "হ্যাঁ" in passing is not agreement
+#   * confirmed_time            — the day-part vocabulary, and Latin digits
+#   * patient_availability_notes — expect the notes in Bangla
+# Everything else matches word for word. Keep it that way.
+#
+# The old system nominally collected six fields but did not trust them, so it
+# fell back to regex-scraping the transcript for the word "yes" — which matched
+# the agent's own lines and booked appointments patients had not agreed to.
+#
+# Any field the agent cannot fill must come back null so the workflow can route
+# it to a human, rather than being guessed at downstream.
+# ---------------------------------------------------------------------------
+platform_settings:
+  data_collection:
+    patient_confirmed:
+      type: boolean
+      description: >-
+        True ONLY if the patient explicitly agreed to attend the appointment at
+        a specific date and time, and confirmed it when it was read back to
+        them. False if they declined, asked to reschedule, or did not commit.
+        Null if the call did not reach the patient at all (voicemail, wrong
+        number, someone else answered). Do not infer agreement from politeness
+        or from the word "yes" said in passing — it must be agreement to the
+        appointment itself. The conversation is in Bangla; "হ্যাঁ" said in
+        passing is not agreement either.
+
+    confirmed_date:
+      type: string
+      description: >-
+        The agreed appointment date as YYYY-MM-DD, in Latin digits. Resolve
+        relative references against today's date, which was given in the
+        prompt. Null unless patient_confirmed is true.
+
+    confirmed_time:
+      type: string
+      description: >-
+        The agreed appointment start time in 24-hour HH:MM form in Latin
+        digits, e.g. "14:30" for half past two in the afternoon. Bangla
+        day-parts map as: সকাল = morning, দুপুর = early afternoon, বিকেল = late
+        afternoon, সন্ধ্যা = early evening, রাত = night. If the patient never
+        made the day-part explicit, return null rather than guessing. Null
+        unless patient_confirmed is true.
+
+    call_outcome:
+      type: string
+      description: >-
+        Exactly one of: confirmed, reschedule_requested, declined, voicemail,
+        wrong_number, no_answer, patient_unavailable, opted_out, emergency.
+        Use "emergency" if the patient described a medical emergency.
+
+    patient_availability_notes:
+      type: string
+      description: >-
+        If the patient asked to reschedule, their stated availability in their
+        own words, in Bangla, e.g. "শুধু সকালে, শুক্রবার ছাড়া". Null otherwise.
+        Do not paraphrase into a specific slot — a human reads this.
+
+    callback_requested:
+      type: boolean
+      description: >-
+        True if the patient asked to be called back by a member of staff, or
+        asked a question this agent was not permitted to answer.
+
+    reached_patient:
+      type: boolean
+      description: >-
+        True only if the identity check confirmed the person on the call was
+        the patient. False for voicemail, wrong numbers, or another person.
