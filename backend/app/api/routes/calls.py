@@ -22,45 +22,18 @@ stops being swappable.
 from __future__ import annotations
 
 import logging
-from datetime import date
 
 from fastapi import APIRouter, status
 
 from app.api.deps import TenantDep
-from app.core.config import get_settings
+from app.engine.policy import resolve_call_reason
 from app.integrations.elevenlabs.client import ElevenLabsClient
+from app.integrations.elevenlabs.variables import build_dynamic_variables
 from app.schemas.call import BindConversation, StartWebCall, WebCallStarted
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/calls", tags=["calls"])
-
-
-def build_dynamic_variables(
-    *, patient: dict, body: StartWebCall, doctor_id: str
-) -> dict[str, str]:
-    """Every {{placeholder}} the agent prompt references.
-
-    Must stay in step with agents/*.yaml. A name missing here is not an error
-    at the API — it reaches the patient as the literal text "{{patient_name}}",
-    spoken aloud. scripts/test_call.py has the same list for the phone path;
-    if you add a placeholder to the spec, both change.
-
-    Values are strings because ElevenLabs accepts nothing else.
-    """
-    settings = get_settings()
-    return {
-        "patient_name": str(patient.get("name") or "there"),
-        # TODO: read these off the doctors row once it carries them. Hardcoded
-        # here rather than accepted from the request on purpose — they are
-        # spoken to a patient as the identity of the caller.
-        "doctor_name": str(patient.get("primary_physician") or "your doctor"),
-        "practice_name": "Clarus",
-        "appointment_reason": body.appointment_reason,
-        "callback_number": body.callback_number,
-        "timezone": settings.default_timezone,
-        "today_date": date.today().isoformat(),
-    }
 
 
 @router.post("/web", response_model=WebCallStarted, status_code=status.HTTP_201_CREATED)
@@ -89,8 +62,11 @@ def start_web_call(body: StartWebCall, scope: TenantDep) -> dict:
         },
     )
 
+    # The reason is resolved from a fixed vocabulary, not taken as text. Same
+    # rule the workflow engine's call_patient node follows, for the same reason:
+    # anything here is spoken to a patient.
     variables = build_dynamic_variables(
-        patient=patient, body=body, doctor_id=scope.doctor_id
+        patient=patient, appointment_reason=resolve_call_reason(body.model_dump())
     )
 
     # After the insert: a token minted for a call log that failed to write is a

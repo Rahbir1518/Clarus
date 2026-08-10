@@ -15,7 +15,7 @@ lists, and none can be steered into reading a row of the caller's choosing.
 Adding a function that takes a table name, or that returns more than one row,
 removes that property. Don't.
 
-Neither function filters `deleted_at IS NULL`, unlike every read in
+Neither call-log function filters `deleted_at IS NULL`, unlike every read in
 TenantScope. That is deliberate: the call really was placed, and its outcome
 belongs on the record even if the row was deleted while the phone was ringing.
 Nothing here returns the row to the webhook caller, and the soft-deleted log
@@ -26,6 +26,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.core.errors import NotFound
+from app.db.tenancy import TenantScope
 
 
 def _rows(response: Any) -> list[dict]:
@@ -81,3 +82,54 @@ def update_call_log_by_conversation(
     if not rows:
         raise NotFound("Call log")
     return rows[0]
+
+
+def get_workflow_by_id(client: Any, workflow_id: str) -> dict:
+    """Read one workflow by id, with no tenant to scope to.
+
+    Narrower than it looks, and it has to stay that way. The only caller is the
+    webhook resume path, and the id it passes is read off a `call_logs` row this
+    module already resolved by `conversation_id` — never off the request. So the
+    capability is still the provider-issued conversation id: holding one gets you
+    the workflow that call was running, and nothing else.
+
+    Adding a caller that takes `workflow_id` from a request body would make this
+    an unscoped read of any tenant's workflow. Don't. Authenticated callers have
+    `TenantScope.get_owned`, which answers 404 for a workflow that is not theirs.
+    """
+    if not workflow_id:
+        raise NotFound("Workflow")
+    rows = _rows(
+        client.table("workflows").select("*").eq("id", workflow_id).execute()
+    )
+    if not rows:
+        raise NotFound("Workflow")
+    return rows[0]
+
+
+def tenant_scope_for_row(client: Any, row: dict) -> TenantScope:
+    """A TenantScope for the tenant that owns an already-stored row.
+
+    The exception that proves the rule in `app/api/deps.py`: there, the tenant
+    key comes from a verified token, and `get_tenant_scope` being the only
+    constructor is what stops a handler addressing someone else's data. A
+    webhook has no token, so it needs another way to say which tenant it is
+    acting for — and the resume path genuinely does need to act as one, because
+    it books appointments and writes notifications that must be checked exactly
+    as an authenticated request's would be.
+
+    The safety argument is provenance. `doctor_id` is read from a row this
+    process stored, never from the webhook body, and the row was reached through
+    `get_call_log_by_conversation` — keyed on an unguessable id the provider
+    issued for a call this system placed. Nothing an attacker sends chooses the
+    tenant; the most a forged payload can do is name a conversation that does not
+    exist, which is a 404 before this is ever called.
+
+    Every write after this point goes through the ordinary `TenantScope` checks,
+    which is the reason to build one rather than write through the raw client.
+    """
+    doctor_id = str(row.get("doctor_id") or "")
+    if not doctor_id:
+        # TenantScope refuses a falsy key anyway; this names the reason.
+        raise NotFound("Doctor")
+    return TenantScope(client, doctor_id)

@@ -11,6 +11,7 @@ import logging
 import uuid
 
 from fastapi import FastAPI, Request, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -83,7 +84,13 @@ def register_error_handlers(app: FastAPI) -> None:
             content=_envelope(
                 "Request validation failed",
                 code="validation_error",
-                extra={"details": exc.errors()},
+                # jsonable_encoder, not exc.errors() raw. A field_validator that
+                # raises ValueError has the exception *object* in its `ctx`, which
+                # json.dumps cannot render — so the 422 became a 500, and the
+                # caller learned nothing about the field they got wrong. There
+                # were no such validators when this was written, which is exactly
+                # why it went unnoticed.
+                extra={"details": jsonable_encoder(exc.errors())},
             ),
         )
 

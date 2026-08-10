@@ -1,9 +1,15 @@
 // ---------------------------------------------------------------------------
-// The `nodeType` field is the dispatch key used by the backend workflow engine
-// (workflow_engine.py). It MUST match one of:
-//   TRIGGER_TYPES, ACTION_TYPES, CONDITION_TYPES, or OUTPUT_TYPES
+// The `nodeType` field is the dispatch key used by the backend workflow engine.
+// It MUST match one of TRIGGER_TYPES, ACTION_TYPES, CONDITION_TYPES or
+// OUTPUT_TYPES in backend/app/engine/catalogue.py — a node type this file
+// offers and that file does not know is refused at run time, before any node
+// executes, rather than skipped.
+//
 // React Flow uses the top-level `type` field for rendering (trigger | action |
 // conditional | endpoint), while `data.nodeType` tells the engine what to do.
+// The engine derives a node's category from `nodeType` alone and never from
+// `type`, so a graph whose presentation and dispatch key disagree behaves
+// according to the dispatch key.
 // ---------------------------------------------------------------------------
 
 export interface CatalogueNode {
@@ -80,10 +86,16 @@ export const NODE_CATALOGUE: NodeCatalogueCategory[] = [
     reactFlowType: 'action',
     nodes: [
       {
+        // `reason_code` picks from a fixed vocabulary rather than accepting a
+        // sentence. The agent never discloses a clinical result, so there is no
+        // free-text field here for one to be written into — see
+        // AI_CALL_SAFETY_POLICY.md. A node still carrying the old
+        // `lab_result_summary` parameter is refused by the engine, loudly,
+        // rather than executed with the summary quietly dropped.
         nodeType: 'call_patient',
         label: 'Call Patient',
         description: 'Place an AI-powered outbound call to the patient via ElevenLabs + Twilio',
-        params: { lab_result_summary: '' },
+        params: { reason_code: 'results_ready', callback_number: '' },
       },
       {
         nodeType: 'send_sms',
@@ -94,8 +106,8 @@ export const NODE_CATALOGUE: NodeCatalogueCategory[] = [
       {
         nodeType: 'schedule_appointment',
         label: 'Schedule Appointment',
-        description: 'Schedule a follow-up appointment on Google Calendar',
-        params: {},
+        description: 'Book the time the patient agreed to on the call. Runs after Call Patient.',
+        params: { duration_minutes: '30', location: '' },
       },
       {
         nodeType: 'send_notification',
@@ -134,10 +146,21 @@ export const NODE_CATALOGUE: NodeCatalogueCategory[] = [
     reactFlowType: 'conditional',
     nodes: [
       {
+        // `abnormal_branch` names the side of this comparison that means an
+        // abnormal result. A run that takes it will not place an automated call —
+        // it routes to a human instead. Defaults to the "true" branch, where the
+        // threshold is met, because that is how these graphs are drawn and
+        // because guessing the other way would place calls on abnormal paths.
         nodeType: 'check_result_values',
         label: 'Check Result Values',
         description: 'Branch based on whether lab results meet a threshold',
-        params: { test_name: '', operator: 'greater_than', threshold: '', threshold_max: '' },
+        params: {
+          test_name: '',
+          operator: 'greater_than',
+          threshold: '',
+          threshold_max: '',
+          abnormal_branch: 'true',
+        },
       },
       {
         nodeType: 'check_insurance',

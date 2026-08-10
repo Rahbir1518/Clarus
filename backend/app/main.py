@@ -15,6 +15,7 @@ from app.api.routes import (
     calls,
     clinical,
     events,
+    executions,
     health,
     patients,
     webhooks,
@@ -78,6 +79,10 @@ app.include_router(patients.router, prefix="/api")
 app.include_router(clinical.conditions_router, prefix="/api")
 app.include_router(clinical.medications_router, prefix="/api")
 app.include_router(workflows.router, prefix="/api")
+# Workflow *runs*, kept out of workflows.py because they are a different thing
+# from CRUD on the definition. See routes/executions.py.
+app.include_router(executions.workflow_router, prefix="/api")
+app.include_router(executions.lab_event_router, prefix="/api")
 app.include_router(call_logs.router, prefix="/api")
 app.include_router(calls.router, prefix="/api")
 app.include_router(events.router, prefix="/api")

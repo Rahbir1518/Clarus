@@ -98,8 +98,11 @@ export default function CallTestPage() {
         <section className="rounded-lg border p-4">
           <WebCall
             patientId={selected}
-            appointmentReason="আপনার নিয়মিত চেক-আপ"
-            callbackNumber="+8801700000000"
+            // Was a hand-written Bangla sentence and a hard-coded callback
+            // number. Both are spoken to the patient, so both moved out of the
+            // browser's reach: the reason is a code resolved against a fixed
+            // vocabulary, the number is PRACTICE_CALLBACK_NUMBER.
+            reasonCode="annual_check_up"
             onEnded={() => {
               // The webhook lands a moment after the conversation closes.
               setTimeout(refreshLogs, 4000);

@@ -16,6 +16,11 @@ dependencies = [
     "httpx>=0.28",
     # Reads agents/*.yaml — the agent definitions kept under version control.
     "pyyaml>=6.0",
+    # zoneinfo needs a tz database, and Windows ships none — without this the
+    # calling-hours gate cannot resolve Asia/Dhaka and fails closed, so no call
+    # is ever placed from a Windows development machine. Pinned as a real
+    # dependency rather than left to the OS so every platform behaves the same.
+    "tzdata>=2024.1",
 ]
 
 [project.optional-dependencies]

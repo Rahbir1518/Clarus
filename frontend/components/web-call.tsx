@@ -16,16 +16,24 @@
 import { useConversation, ConversationProvider } from '@elevenlabs/react';
 import { useCallback, useRef, useState } from 'react';
 
-import { bindCall, startWebCall } from '@/services/api';
+import { bindCall, startWebCall, type CallReasonCode } from '@/services/api';
 
 type Props = {
   patientId: string;
-  appointmentReason?: string;
-  callbackNumber?: string;
+  /**
+   * Which of the permitted reasons the patient is given for the call — a code,
+   * not a sentence. The words themselves live on the server and are not settable
+   * from here, because anything settable from here is spoken to a patient. See
+   * AI_CALL_SAFETY_POLICY.md.
+   *
+   * The callback number a voicemail asks the patient to ring is configuration
+   * (PRACTICE_CALLBACK_NUMBER), for the same reason.
+   */
+  reasonCode?: CallReasonCode;
   onEnded?: (callLogId: string) => void;
 };
 
-function WebCallInner({ patientId, appointmentReason, callbackNumber, onEnded }: Props) {
+function WebCallInner({ patientId, reasonCode, onEnded }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
 
@@ -58,7 +66,7 @@ function WebCallInner({ patientId, appointmentReason, callbackNumber, onEnded }:
       // and a spent token behind.
       await navigator.mediaDevices.getUserMedia({ audio: true });
 
-      const session = await startWebCall(patientId, { appointmentReason, callbackNumber });
+      const session = await startWebCall(patientId, { reasonCode });
       callLogId.current = session.call_log_id;
 
       conversation.startSession({
@@ -80,7 +88,7 @@ function WebCallInner({ patientId, appointmentReason, callbackNumber, onEnded }:
     } finally {
       setStarting(false);
     }
-  }, [patientId, appointmentReason, callbackNumber, conversation]);
+  }, [patientId, reasonCode, conversation]);
 
   const connected = conversation.status === 'connected';
 

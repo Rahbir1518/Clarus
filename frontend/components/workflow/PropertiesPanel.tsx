@@ -32,10 +32,34 @@ const URGENCY_OPTIONS = [
   { value: 'emergent', label: 'Emergent' },
 ];
 
+// The complete set of reasons a patient may be given for a call. A dropdown
+// rather than a text box on purpose: the agent never discloses a clinical
+// result, and a free-text field is a channel for one. Must match
+// ALLOWED_CALL_REASONS in backend/app/engine/policy.py — a code this list offers
+// and that dict does not hold is refused before the call is placed.
+const REASON_CODE_OPTIONS = [
+  { value: 'results_ready', label: 'Results are ready to discuss' },
+  { value: 'follow_up', label: 'Follow-up appointment' },
+  { value: 'annual_check_up', label: 'Regular check-up' },
+  { value: 'medication_review', label: 'Medication review' },
+  { value: 'appointment_confirmation', label: 'Confirm a booked appointment' },
+  { value: 'missed_appointment', label: 'Missed appointment' },
+];
+
+// Which side of a threshold comparison counts as abnormal. Taking it routes the
+// run to a human instead of to an automated call.
+const ABNORMAL_BRANCH_OPTIONS = [
+  { value: 'true', label: 'True branch (threshold met)' },
+  { value: 'false', label: 'False branch (threshold not met)' },
+  { value: 'none', label: 'Neither — this comparison is not clinical' },
+];
+
 const SELECT_FIELDS: Record<string, { label: string; value: string }[]> = {
   operator: OPERATOR_OPTIONS,
   priority: PRIORITY_OPTIONS,
   urgency: URGENCY_OPTIONS,
+  reason_code: REASON_CODE_OPTIONS,
+  abnormal_branch: ABNORMAL_BRANCH_OPTIONS,
 };
 
 const FIELD_LABELS: Record<string, string> = {
@@ -58,7 +82,13 @@ const FIELD_LABELS: Record<string, string> = {
   task_type: 'Task Type',
   due_date: 'Due Date',
   risk_level: 'Risk Level',
-  lab_result_summary: 'Lab Result Summary',
+  reason_code: 'Reason for the Call',
+  callback_number: 'Callback Number',
+  abnormal_branch: 'Abnormal Branch',
+  duration_minutes: 'Duration (minutes)',
+  location: 'Location',
+  target_provider_name: 'Target Provider',
+  target_facility: 'Target Facility',
 };
 
 const FIELD_PLACEHOLDERS: Record<string, string> = {
@@ -78,7 +108,11 @@ const FIELD_PLACEHOLDERS: Record<string, string> = {
   task_type: 'e.g. follow_up, review',
   due_date: 'YYYY-MM-DD',
   risk_level: 'low, moderate, or high',
-  lab_result_summary: 'Summary for the AI call agent...',
+  callback_number: 'Falls back to PRACTICE_CALLBACK_NUMBER',
+  duration_minutes: 'e.g. 30',
+  location: 'e.g. Main clinic, Room 2',
+  target_provider_name: 'Provider name',
+  target_facility: 'Facility name',
 };
 
 interface Props {
@@ -142,7 +176,7 @@ export function PropertiesPanel({ selectedNode, onUpdateParams, onDeleteNode }: 
       );
     }
 
-    if (key === 'message' || key === 'reason' || key === 'notes' || key === 'lab_result_summary') {
+    if (key === 'message' || key === 'reason' || key === 'notes') {
       return (
         <div key={key}>
           <label className="block text-[10px] text-muted-foreground font-medium mb-1">{label}</label>

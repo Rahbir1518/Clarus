@@ -619,7 +619,7 @@ function FlowContent() {
     try {
       const result = await executeWorkflow(savedWorkflowId, selectedPatientId);
       setRunResult(result);
-      setRunStatus(result.status === 'failed' ? 'error' : 'success');
+      setRunStatus(result.status === 'failed' || result.status === 'blocked' ? 'error' : 'success');
     } catch {
       setRunStatus('error');
       setRunResult({ execution_log: [], status: 'failed', call_log_id: null });
@@ -633,10 +633,25 @@ function FlowContent() {
     catch { return iso; }
   };
 
+  // The five step statuses the engine records. See backend/app/engine/steps.py —
+  // blocked and failed are deliberately distinct there, so they are not collapsed
+  // to one colour here: blocked is a question for whoever drew the workflow,
+  // failed is a question for the backend.
   const stepColor = (s: string) => {
     if (s === 'ok') return '#10b981';
-    if (s === 'error') return '#ef4444';
+    if (s === 'failed') return '#ef4444';
+    if (s === 'blocked') return '#f97316';
+    if (s === 'parked') return '#f59e0b';
     return '#6b7280';
+  };
+
+  // A parked run placed a call and is waiting for the post-call webhook, which is
+  // a success. Blocked means a safety rule refused something, which is not.
+  const RUN_LABELS: Record<string, string> = {
+    completed: '✓ Completed',
+    parked: '⏳ Call placed — waiting for the outcome',
+    blocked: '⛔ Stopped by a safety rule',
+    failed: '✕ Failed',
   };
 
   // ────────────────────────────────────────────────────────────────────────
@@ -1050,7 +1065,7 @@ function FlowContent() {
                   runStatus === 'success' ? 'bg-success/10 border border-success/30' : 'bg-destructive/10 border border-destructive/30'
                 }`}>
                   <span className="text-sm font-semibold">
-                    {runStatus === 'success' ? '✓ Completed' : '✕ Failed'}
+                    {RUN_LABELS[runResult.status] ?? (runStatus === 'success' ? '✓ Completed' : '✕ Failed')}
                   </span>
                   {runResult.call_log_id && (
                     <span className="text-[10px] text-muted-foreground ml-auto">

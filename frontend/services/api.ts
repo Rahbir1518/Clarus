@@ -47,19 +47,33 @@ export { fetch as authorizedFetch };
 // Lab event
 // ---------------------------------------------------------------------------
 
+/**
+ * Fire one trigger and let every enabled workflow that listens for it run.
+ *
+ * `matched: 0` is an ordinary answer — an event nothing subscribes to is not an
+ * error. `unrunnable` lists enabled workflows that listen for this trigger but
+ * whose graph could not be walked, so a broken workflow is visible rather than
+ * silently never firing.
+ *
+ * No doctor_id: the tenant comes from the session token, as it does everywhere.
+ */
 export async function simulateLabEvent(
   triggerType: string,
   patientId: string,
-  doctorId?: string,
   metadata?: Record<string, unknown>,
-) {
+): Promise<{
+  trigger_type: string;
+  patient_id: string;
+  matched: number;
+  runs: WorkflowRun[];
+  unrunnable: { workflow_id: string; name: string | null; reason: string }[];
+}> {
   const response = await fetch(`${API_URL}/api/lab-event`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       trigger_type: triggerType,
       patient_id: patientId,
-      doctor_id: doctorId ?? null,
       metadata: metadata ?? {},
     }),
   });
@@ -250,17 +264,48 @@ export async function deleteCondition(patientId: string, conditionId: string) {
 // Execute workflow
 // ---------------------------------------------------------------------------
 
+/** One entry in a run's execution log. Shape defined in backend/app/engine/steps.py. */
+export type ExecutionStep = {
+  seq: number;
+  node_id: string | null;
+  node_type: string;
+  label: string;
+  /** ok | skipped | blocked | failed | parked */
+  status: string;
+  message: string;
+  at: string;
+  branch: 'true' | 'false' | null;
+  entity: { table: string; id: string } | null;
+};
+
+export type WorkflowRun = {
+  call_log_id: string;
+  /** completed | parked | failed | blocked. `parked` means a call is in flight. */
+  status: string;
+  execution_log: ExecutionStep[];
+  workflow_id: string | null;
+};
+
+/**
+ * Run one workflow against one patient.
+ *
+ * `metadata` is the body of the event that would have fired the trigger — lab
+ * values, and an `abnormal` flag. Conditionals read it. None of it is ever
+ * spoken to the patient, which is why free-form data is safe here.
+ */
 export async function executeWorkflow(
   workflowId: string,
   patientId: string,
   triggerNodeType?: string,
-) {
+  metadata?: Record<string, unknown>,
+): Promise<WorkflowRun> {
   const response = await fetch(`${API_URL}/api/workflows/${workflowId}/execute`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       patient_id: patientId,
       trigger_node_type: triggerNodeType ?? null,
+      metadata: metadata ?? {},
     }),
   });
   return response.json();
@@ -303,9 +348,21 @@ export type WebCallStarted = {
   dynamic_variables: Record<string, string>;
 };
 
+// The reasons a patient may be given for a call, and the whole set of them.
+// Mirrors ALLOWED_CALL_REASONS in backend/app/engine/policy.py; anything else is
+// a 422. There is no free-text alternative on purpose — the agent never
+// discloses a clinical result, and a sentence field is how one would get said.
+export type CallReasonCode =
+  | 'results_ready'
+  | 'follow_up'
+  | 'annual_check_up'
+  | 'medication_review'
+  | 'appointment_confirmation'
+  | 'missed_appointment';
+
 export async function startWebCall(
   patientId: string,
-  options: { workflowId?: string; appointmentReason?: string; callbackNumber?: string } = {},
+  options: { workflowId?: string; reasonCode?: CallReasonCode } = {},
 ): Promise<WebCallStarted> {
   const response = await fetch(`${API_URL}/api/calls/web`, {
     method: 'POST',
@@ -313,8 +370,7 @@ export async function startWebCall(
     body: JSON.stringify({
       patient_id: patientId,
       workflow_id: options.workflowId,
-      appointment_reason: options.appointmentReason,
-      callback_number: options.callbackNumber,
+      reason_code: options.reasonCode,
     }),
   });
   if (!response.ok) throw new Error(`Could not start the call (${response.status})`);

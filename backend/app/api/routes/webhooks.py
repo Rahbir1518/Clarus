@@ -14,9 +14,15 @@ from fastapi import APIRouter, Header, Response, status
 from app.api.deps import RawBodyDep, SupabaseDep
 from app.core.config import get_settings
 from app.core.errors import NotFound
-from app.db.system import update_call_log_by_conversation
+from app.db.system import (
+    get_workflow_by_id,
+    tenant_scope_for_row,
+    update_call_log_by_conversation,
+)
+from app.engine.runner import ResumeSkipped, resume_run
 from app.events.broker import Event, broker
 from app.integrations.elevenlabs.webhook import (
+    CallResult,
     WebhookVerificationError,
     loads_raw,
     parse_post_call_payload,
@@ -108,14 +114,57 @@ def elevenlabs_post_call(
         result.needs_human_review,
     )
 
+    # The call was the middle of a workflow, not the end of one. Continuing it
+    # here is what turns "the patient agreed to Tuesday at two thirty" into an
+    # appointment; before this line existed, that agreement was recorded and
+    # then nothing acted on it.
+    _resume_workflow(client, row, result)
+
     # Nudge any open stream belonging to the tenant that owns this call. The id
     # comes from the stored row, never from the payload — the webhook is
     # unauthenticated, so nothing it sends may decide who gets told.
     #
-    # After the write and after the log line: a notification is worth nothing
-    # if the re-fetch it triggers cannot yet see the change, and publishing
-    # must not be able to fail the webhook.
+    # After the write, after the log line, and after the resume: a notification
+    # is worth nothing if the re-fetch it triggers cannot yet see the change,
+    # and the resume writes more than the outcome did.
     broker.publish(
         row.get("doctor_id", ""), Event("call_log.updated", str(row.get("id", "")))
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+def _resume_workflow(client: object, row: dict, result: CallResult) -> None:
+    """Continue the parked workflow run this call belonged to.
+
+    Never raises. Two reasons, and they point the same way: the outcome is
+    already recorded, so failing here would discard a successful write; and
+    ElevenLabs retries on a non-2xx, so an exception becomes a retry storm that
+    re-runs the resume it just failed. The run is left parked and flagged for
+    review instead, which is a person's problem rather than a lost call.
+
+    A call with no `workflow_id` — every web call from `routes/calls.py` — has
+    nothing to resume and is not an error.
+    """
+    workflow_id = row.get("workflow_id")
+    if not workflow_id:
+        return
+
+    call_log_id = row.get("id")
+    try:
+        workflow = get_workflow_by_id(client, str(workflow_id))
+        # The tenant comes from the stored row's doctor_id, never from the
+        # payload. See app/db/system.py for the provenance argument.
+        scope = tenant_scope_for_row(client, row)
+        run = resume_run(scope, row, result, workflow)
+    except ResumeSkipped as exc:
+        logger.info("Not resuming call log %s: %s", call_log_id, exc)
+    except NotFound:
+        logger.warning(
+            "Call log %s references workflow %s, which no longer exists",
+            call_log_id,
+            workflow_id,
+        )
+    except Exception:  # noqa: BLE001 - see the docstring
+        logger.exception("Resuming the run for call log %s failed", call_log_id)
+    else:
+        logger.info("Resumed run for call log %s: %s", call_log_id, run.status)

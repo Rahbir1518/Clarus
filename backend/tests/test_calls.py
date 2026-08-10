@@ -11,6 +11,7 @@ import pytest
 
 from app.api.routes import calls as calls_route
 from app.db.tenancy import TenantScope
+from app.engine.policy import ALLOWED_CALL_REASONS
 from tests.conftest import FakeSupabase
 
 ALICE = "user_2alice"
@@ -74,17 +75,14 @@ def test_dynamic_variables_come_from_the_patient_row_not_the_request(
 
     response = client.post(
         "/api/calls/web",
-        json={
-            "patient_id": patient["id"],
-            "appointment_reason": "your check-up",
-            "callback_number": "+8801711111111",
-        },
+        json={"patient_id": patient["id"], "reason_code": "annual_check_up"},
         headers=auth_header(ALICE),
     )
 
     variables = response.json()["dynamic_variables"]
     assert variables["patient_name"] == "করিম উদ্দিন"
-    assert variables["appointment_reason"] == "your check-up"
+    # The phrase, not the code. It comes from ALLOWED_CALL_REASONS server-side.
+    assert variables["appointment_reason"] == ALLOWED_CALL_REASONS["annual_check_up"]
     assert variables["timezone"] == "Asia/Dhaka"
     # Every placeholder the agent spec references, or the patient hears the
     # literal "{{...}}" spoken to them.
@@ -109,6 +107,43 @@ def test_a_name_the_client_supplies_is_refused_outright(client, fake_db, auth_he
     )
 
     assert response.status_code == 422
+
+
+def test_free_text_spoken_to_a_patient_is_refused(client, fake_db, auth_header):
+    """The hole this closed.
+
+    `appointment_reason` used to be 200 characters of client-supplied text read
+    aloud by the agent, which is a channel for disclosing a lab result — the one
+    thing AI_CALL_SAFETY_POLICY.md forbids outright. `extra="forbid"` is what
+    makes an old caller fail loudly rather than have its sentence ignored.
+    """
+    patient = _patient(fake_db, ALICE)
+
+    response = client.post(
+        "/api/calls/web",
+        json={
+            "patient_id": patient["id"],
+            "appointment_reason": "your cholesterol came back at 6.8",
+        },
+        headers=auth_header(ALICE),
+    )
+
+    assert response.status_code == 422
+    assert fake_db.store.get("call_logs", []) == []
+
+
+def test_a_reason_code_outside_the_vocabulary_is_refused(client, fake_db, auth_header):
+    patient = _patient(fake_db, ALICE)
+
+    response = client.post(
+        "/api/calls/web",
+        json={"patient_id": patient["id"], "reason_code": "results_are_bad"},
+        headers=auth_header(ALICE),
+    )
+
+    assert response.status_code == 422
+    # Not defaulted to something else and dialled anyway.
+    assert fake_db.store.get("call_logs", []) == []
 
 
 def test_calling_another_practices_patient_is_a_404(client, fake_db, auth_header):

@@ -77,6 +77,46 @@ class Settings(BaseSettings):
     # books appointments at the right clock time on the wrong side of the world.
     default_timezone: str = "Asia/Dhaka"
 
+    # --- What the agent says about itself ----------------------------------
+    #
+    # Both are spoken to a patient, so neither is accepted from a request. The
+    # practice name identifies the caller; the callback number is what a
+    # voicemail asks the patient to ring. A workflow that would leave a
+    # voicemail with no number to call back on is refused rather than left to
+    # say nothing useful.
+    practice_name: str = "Clarus"
+    practice_callback_number: str = ""
+
+    # --- Outbound call gates -----------------------------------------------
+    #
+    # See AI_CALL_SAFETY_POLICY.md. Every default here is the restrictive one,
+    # because each of these is a variable that someone will forget to set — and
+    # a forgotten variable must mean fewer calls than intended, never more.
+
+    # The kill switch. False means no workflow places a call, whatever else is
+    # configured. Per-process and instant: flip it and redeploy, or set it
+    # before a deploy you are unsure about.
+    calls_enabled: bool = False
+
+    # Comma-separated E.164 numbers that may be dialled — checklist stage 1,
+    # where your own phone is the only reachable number and the restriction
+    # lives in code rather than in your memory. Empty means nothing is callable,
+    # which is why the enforcement flag below is separate: lifting the
+    # restriction has to be an explicit sentence, not an omission.
+    call_allowed_numbers: str = ""
+    call_allowlist_enforced: bool = True
+
+    # Local hours in default_timezone during which a patient may be called,
+    # start inclusive and end exclusive. 9–20 is a conservative reading of a
+    # reasonable hour to ring somebody about their health.
+    calling_hours_start: int = 9
+    calling_hours_end: int = 20
+
+    # Calls actually placed to one patient in the trailing 24 hours. Counted
+    # from call_logs rows that reached a provider conversation, so a run blocked
+    # before dialling does not consume an attempt.
+    max_call_attempts_per_patient: int = 3
+
     @property
     def clerk_jwks_url(self) -> str:
         return f"{self.clerk_issuer.rstrip('/')}/.well-known/jwks.json"
@@ -84,6 +124,10 @@ class Settings(BaseSettings):
     @property
     def clerk_authorized_party_list(self) -> list[str]:
         return [p.strip() for p in self.clerk_authorized_parties.split(",") if p.strip()]
+
+    @property
+    def call_allowed_number_list(self) -> list[str]:
+        return [n.strip() for n in self.call_allowed_numbers.split(",") if n.strip()]
 
     @property
     def cors_origin_list(self) -> list[str]:

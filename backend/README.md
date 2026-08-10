@@ -36,8 +36,11 @@ git checkout 91382a9 -- backend                   # restore the whole tree
 | ElevenLabs agent definition, in version control | ✅ `agents/appointment_confirmation.yaml` |
 | ElevenLabs client + outbound calling | ✅ `app/integrations/elevenlabs/` |
 | Post-call webhook, signature-verified | ✅ `app/api/routes/webhooks.py` |
-| Test suite (153 tests) | ✅ `tests/` |
-| Workflow engine, `executeWorkflow`, trigger path | ❌ not built |
+| Workflow engine — graph walk, park at the call, resume from the webhook | ✅ `app/engine/` |
+| AI call safety policy, enforced in code | ✅ [`../AI_CALL_SAFETY_POLICY.md`](../AI_CALL_SAFETY_POLICY.md), `app/engine/policy.py` |
+| `POST /api/workflows/{id}/execute`, `POST /api/lab-event` | ✅ `app/api/routes/executions.py` |
+| Test suite (225 tests) | ✅ `tests/` |
+| One real call, one real webhook | ⚠️ never exercised — see STATUS.md "Known gaps" |
 | PDF intake, Google Calendar | ❌ not built |
 | Appointments, lab orders, referrals, notifications, reports | ❌ no page calls them — see STATUS.md |
 

@@ -1,8 +1,12 @@
 # Clarus backend — status, setup, and what's next
 
-Current as of 2026-08-06. Companion to [README.md](README.md), which explains
+Current as of 2026-08-09. Companion to [README.md](README.md), which explains
 *how* the foundation works; this file records *what is built*, *what you must
 run*, and *what is deliberately missing*.
+
+What the AI agent may and may not say is its own document:
+[../AI_CALL_SAFETY_POLICY.md](../AI_CALL_SAFETY_POLICY.md). Read it before
+changing anything under `app/engine/`.
 
 ---
 
@@ -26,11 +30,14 @@ python -c "from app.main import app; import json; print(json.dumps(sorted(app.op
 | `PUT` `DELETE` | `/api/patients/{patient_id}/medications/{medication_id}` |
 | `GET` `POST` | `/api/workflows` |
 | `GET` `PUT` `DELETE` | `/api/workflows/{workflow_id}` |
+| `POST` | `/api/workflows/{workflow_id}/execute` — runs the graph |
+| `POST` | `/api/lab-event` — trigger simulation; runs every matching `ENABLED` workflow |
 | `GET` | `/api/call-logs`, `/api/call-logs/{call_log_id}` |
+| `POST` | `/api/calls/web`, `/api/calls/web/{call_log_id}/bind` |
 | `GET` | `/api/events` — SSE stream |
 | `POST` | `/api/elevenlabs/webhook` — signature-authenticated |
 
-153 tests, all passing.
+225 tests, all passing.
 
 ### Which frontend pages work
 
@@ -209,6 +216,52 @@ shape.** Adding a payload field is how it stops holding.
 
 See `app/events/broker.py`.
 
+### The run row is the run's memory
+
+`app/engine/runner.py` creates the `call_logs` row **before** it dials, and the
+row id *is* the run id. Everything the run knows lives in
+`call_logs.execution_log`; the engine holds no state between requests.
+
+That is what makes a call survivable. A call takes minutes and ends in a webhook
+arriving at a process that may have restarted since — so the run stops at the
+call node with status `parked`, and the webhook re-reads the workflow, replays
+the steps already logged, and continues past the call node. An in-memory run
+would lose the patient somewhere between "dialling" and "confirmed".
+
+Three consequences worth keeping:
+
+- **A duplicate webhook delivery must not run the graph twice.** Resume checks
+  the log for a `run.resumed` step and refuses if one is there. ElevenLabs
+  retries; retries are normal, not exceptional.
+- **A workflow edited mid-call refuses to resume.** The graph is fingerprinted
+  at run start. Finishing on a graph the run did not start on is worse than
+  stopping and showing a person both, and no copy of the original is kept.
+- **`execution_log` is append-only.** Steps are added; none is rewritten. It is
+  the only record of *why* a patient was called, so a step that can be edited
+  after the fact is not evidence of anything.
+
+### Everything the agent says comes from a closed set
+
+`POST /api/calls/web` used to accept 200 characters of free text and speak them
+to a patient. It no longer does: both call paths resolve what the agent says
+from a fixed vocabulary of reason codes in `app/engine/policy.py`.
+
+This is the structural version of "the agent never discloses clinical results".
+A prompt instruction is a request; removing the free-text field removes the
+capability. The same reasoning refuses a call node carrying a parameter named
+after clinical content, and taints a run that has passed through a threshold's
+abnormal branch so a downstream call is blocked rather than reworded.
+
+Every gate that decides whether a call happens at all — kill switch, phone
+allowlist, calling hours, attempt cap — fails **closed**. The calling-hours gate
+is the clearest case: if the timezone cannot be loaded it blocks the call rather
+than assuming UTC, which is the difference between no call and a call at 3am.
+`CALLS_ENABLED` defaults to false for the same reason.
+
+See [../AI_CALL_SAFETY_POLICY.md](../AI_CALL_SAFETY_POLICY.md), including its
+known gaps — the policy is honest about what is enforced and what is still only
+written down.
+
 ### Defence in depth on writes
 
 Three layers, deliberately overlapping so a bug in one is caught by another:
@@ -236,6 +289,10 @@ its foreign keys point.
 `frontend/services/api.ts`, but no page or component calls any of them. Build
 one when a screen needs it; unused endpoints are attack surface with no user.
 
+`appointments` is now the first of these with a real caller waiting: the engine's
+`schedule_appointment` node writes the row when a patient confirms a time, and
+nothing reads it back. That route is worth building next.
+
 **`reports`** additionally has no entry in `PATIENT_CHILD_TABLES` or
 `WRITABLE_COLUMNS`, so RLS covers it but the application cannot touch it.
 
@@ -262,7 +319,18 @@ against a store that never validated a schema.
 **Anything touching a column added by a migration must be exercised against
 real Postgres before it is trusted.** The webhook write path is the current
 example: `002_call_outcomes.sql` is applied and all twelve keys it writes now
-resolve, but no real webhook has confirmed it.
+resolve, but no real webhook has confirmed it. The engine adds
+`call_logs.execution_log`, `trigger_node`, and `timezone` to the same list — 60
+engine tests pass against a store that would accept a misspelled column name
+just as happily.
+
+### No call has ever been placed by the engine
+
+Every call path is covered by tests with a fake ElevenLabs client. That proves
+the gates refuse what they should and the run parks where it should; it proves
+nothing about a phone ringing. Before the first real call, set
+`CALLS_ENABLED=true` with **only your own number** in `CALL_ALLOWED_NUMBERS`,
+and expect the gates to refuse you at least once — that is them working.
 
 ### Single worker only
 
@@ -278,15 +346,18 @@ handlers call `publish` rather than touching `_subscribers` directly.
 
 ## What's next, in order
 
-1. **Workflow engine.** `executeWorkflow` and the trigger path. Real design
-   work, not volume: what fires a trigger, how a `call_logs` row is created
-   before the call is placed, what goes into `execution_log`. Nothing currently
-   creates a call log, so this is also what makes the SSE stream show anything.
-2. **PDF intake.** The dashboard's upload button. Needs two decisions: which
-   parsing library, and whether files go to Supabase Storage or are discarded
-   after extraction. Note that `pdf_documents.uploaded_by` is set from the
-   token, not the request body.
-3. **The unused resources above**, when a page needs one.
+1. **One real webhook and one real call**, in that order. The engine is built;
+   what is unproven is the two places it meets a real system — a Postgres that
+   validates columns, and a phone. Both are listed under "Known gaps" above with
+   what specifically to watch.
+2. **`appointments` route**, so the workflow builder can show what the engine
+   booked. It writes appointments today and nothing reads them.
+3. **PDF intake.** The dashboard's upload button, and the last remaining 404.
+   Needs two decisions: which parsing library, and whether files go to Supabase
+   Storage or are discarded after extraction. Note that
+   `pdf_documents.uploaded_by` is set from the token, not the request body.
+4. **The other unused resources above**, when a page needs one.
 
-Each resource in step 3 is the same ~50-line shape as
-`app/api/routes/patients.py`, which is written to be copied. Step 1 is not.
+Steps 2 and 4 are the same ~50-line shape as `app/api/routes/patients.py`, which
+is written to be copied. Step 1 is not code at all — it is accounts, a tunnel,
+and paying attention to what the first call actually does.

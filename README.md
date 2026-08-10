@@ -31,13 +31,17 @@
 >
 > What is real right now: the schema and Row Level Security in
 > [backend/migrations/](backend/migrations/), Clerk JWT verification, enforced
-> tenant isolation, live updates over SSE, and CRUD for patients, workflows,
-> conditions, medications and call logs. The workflow engine, Google Calendar
-> and PDF processing are not yet built.
+> tenant isolation, live updates over SSE, CRUD for patients, workflows,
+> conditions, medications and call logs, and the workflow engine in
+> [backend/app/engine/](backend/app/engine/) — which walks the graph, parks at a
+> call, and resumes from the post-call webhook. No real call has been placed
+> through it yet. Google Calendar and PDF processing are not built.
 >
 > **[PROGRESS.md](PROGRESS.md)** — what is done, in progress, and left to do.
 > **[backend/STATUS.md](backend/STATUS.md)** — endpoint inventory, migrations to
 > apply, accounts you need, and what is deliberately unbuilt.
+> **[AI_CALL_SAFETY_POLICY.md](AI_CALL_SAFETY_POLICY.md)** — what the agent may
+> say to a patient, and what stops it saying anything else.
 >
 > The old backend remains readable at commit `91382a9`.
 

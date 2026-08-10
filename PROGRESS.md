@@ -1,12 +1,14 @@
 # Clarus — progress
 
-Where the build actually stands. Last updated 2026-08-06.
+Where the build actually stands. Last updated 2026-08-09.
 
-**Three docs, three jobs.** This one tracks *what is done and what is next*.
+**Four docs, four jobs.** This one tracks *what is done and what is next*.
 [backend/STATUS.md](backend/STATUS.md) is the reference for *what exists and
-how to run it*. [REBUILD_CHECKLIST.md](REBUILD_CHECKLIST.md) is the much larger
-list of what a system holding real patient data in real clinics needs — most of
-it is still unticked, and that is the honest position.
+how to run it*. [AI_CALL_SAFETY_POLICY.md](AI_CALL_SAFETY_POLICY.md) states what
+the agent may and may not say, and which of those rules are enforced in code.
+[REBUILD_CHECKLIST.md](REBUILD_CHECKLIST.md) is the much larger list of what a
+system holding real patient data in real clinics needs — most of it is still
+unticked, and that is the honest position.
 
 Anything marked ✅ has been verified, not assumed. Where verification was not
 possible, it says so.
@@ -57,7 +59,73 @@ removed, so they are load-bearing rather than passing incidentally.
 - [x] Audited PHI read on the call detail route
 - [x] Error envelope that does not leak internals
 - [x] Fail-fast configuration
-- [x] 153 tests passing
+- [x] `POST /api/workflows/{id}/execute` and `POST /api/lab-event`
+- [x] 225 tests passing
+
+### Workflow engine
+
+The blocker this list has been pointing at since the rebuild started. Built in
+`backend/app/engine/` — six modules, one job each, listed in
+`app/engine/__init__.py`.
+
+- [x] **What fires a trigger.** A run always names its trigger node. `execute`
+      takes one explicitly, or infers it when the graph has exactly one;
+      `/api/lab-event` matches `ENABLED` workflows whose trigger node type
+      equals the event. Ambiguity is a 422 naming the candidates, never a guess.
+- [x] **How the graph is walked.** Depth-first from the trigger, following only
+      edges whose source produced a truthy branch; a conditional's `true`/`false`
+      handles pick the edge. Visited nodes are tracked, so a cycle stops instead
+      of dialling forever.
+- [x] **The `call_logs` row is created before the call is placed** — its id is
+      the run id, so a webhook arriving mid-run has something to complete. Every
+      test that places a call asserts the ordering rather than assuming it.
+- [x] **`execution_log` shape decided** — append-only list of steps, each with
+      `node_id`, `node_type`, `label`, `status`, `message`, `at`, and optional
+      `data`. `status` is one of `ok` / `skipped` / `blocked` / `parked` /
+      `failed`, and the workflow builder renders exactly those.
+- [x] **Park at the call, resume from the webhook.** A run that dials stops at
+      `parked` and stores everything the resume needs in `execution_log` — no
+      in-memory state survives a restart. The post-call webhook re-reads the
+      workflow, replays what already ran, and continues past the call node,
+      booking the appointment when the patient confirmed.
+- [x] Resume is idempotent: a duplicate webhook delivery does not run the graph
+      twice.
+- [x] A workflow edited while a call was in flight refuses to resume, because
+      finishing on a graph the run did not start on is worse than stopping and
+      showing a person both.
+- [x] Node catalogue shared with the frontend — `app/engine/catalogue.py` and
+      `frontend/components/workflow/types.ts` name the same node types, and an
+      unknown type fails graph parsing rather than silently doing nothing.
+
+### AI call safety
+
+Written before the engine, and the reason several engine decisions look
+restrictive. Full text and known gaps: [AI_CALL_SAFETY_POLICY.md](AI_CALL_SAFETY_POLICY.md).
+
+- [x] **The agent never discloses clinical results.** It says results are ready
+      and books a time.
+- [x] Enforced structurally, not by prompt wording: what the agent says about
+      why it is calling comes from a **fixed vocabulary of reason codes**, so
+      there is no free-text field on the path to a patient's ear to abuse.
+      `POST /api/calls/web` was brought under the same rule — it used to accept
+      200 characters of free text and speak them.
+- [x] Clinical parameter names on a call node are refused outright, so a
+      workflow author cannot reintroduce disclosure by naming a parameter
+      `lab_result_summary`. That parameter was removed from the frontend
+      catalogue too.
+- [x] Anything abnormal routes to a human: once a run passes through a
+      threshold's abnormal branch it is tainted, and a call node downstream of
+      it is blocked rather than reworded.
+- [x] Four outbound gates, all fail-closed: kill switch (`CALLS_ENABLED`,
+      default **off**), phone allowlist (empty means nothing is callable),
+      calling hours measured in `DEFAULT_TIMEZONE` rather than the server's
+      clock, and a per-patient attempt cap over 24 hours. A run blocked before
+      dialling does not consume an attempt.
+- [x] Every gate has a test asserting the refusal, and the calling-hours gate was
+      accidentally proven fail-closed: the whole suite's call tests failed shut
+      on a machine without `tzdata`, because an unloadable zone blocks the call
+      instead of falling back to UTC and ringing someone at 3am. `tzdata` is now
+      a declared dependency; the refusal stays.
 
 ### Live updates
 
@@ -73,6 +141,8 @@ removed, so they are load-bearing rather than passing incidentally.
 
 - [x] `backend/STATUS.md` — endpoints, migrations, accounts, deliberate gaps
 - [x] `backend/README.md` and root `README.md` status corrected
+- [x] `AI_CALL_SAFETY_POLICY.md` — what the agent may say, what enforces it,
+      and what is still only a promise
 
 ---
 
@@ -86,12 +156,18 @@ Built but never exercised end to end.
 - [x] API client, including outbound calling
 - [x] Post-call webhook with HMAC signature verification and timestamp tolerance
 - [x] Webhook publishes to the SSE stream
+- [x] Something creates a `call_logs` row now: the engine does, before it dials
+- [x] The webhook resumes the parked run, not just the row
 - [ ] **Fire one real webhook against real Postgres.** The test suite *cannot*
       catch a missing column — `FakeSupabase` accepts anything, which is exactly
       how the webhook came to write nine columns that did not exist. `002` is
       applied and all twelve keys resolve, but nothing has confirmed it live.
-- [ ] Nothing places a call yet, because nothing creates a `call_logs` row —
-      that waits on the engine
+      The engine writes `execution_log` and `timezone` on top of that, so this
+      check now covers more than it did.
+- [ ] **Place one real call end to end.** Requires the accounts below, and
+      `CALLS_ENABLED=true` with your own number in `CALL_ALLOWED_NUMBERS` —
+      the gates are deliberately arranged so that forgetting either one means
+      no call rather than a call to a stranger.
 
 ### Accounts — needs you, not code
 
@@ -112,21 +188,21 @@ Built but never exercised end to end.
 
 ## ⬜ To do
 
-### 1. Workflow engine — the real blocker
+### 1. Finish the engine's edges
 
-Design work, not volume. Everything else on this list is copying an existing
-shape; this is not.
+The engine runs; these are the parts a test cannot settle.
 
-- [ ] Decide what fires a trigger and how a workflow graph is walked
-- [ ] Create the `call_logs` row *before* placing the call, so the webhook has
-      something to complete
-- [ ] Decide the `execution_log` shape
-- [ ] `POST /api/workflows/{id}/execute`
-- [ ] `POST /api/lab-event` — the trigger simulation the dashboard uses
-- [ ] ⚠️ Write down the AI call safety policy first. Strong recommendation from
-      [REBUILD_CHECKLIST.md](REBUILD_CHECKLIST.md): **the agent never discloses
-      clinical results.** It says results are ready and books a time; anything
-      abnormal routes to a human.
+- [ ] The two live checks under "ElevenLabs call path" above — one real webhook,
+      one real call
+- [ ] Retry a call that reached voicemail. Today the run parks, the webhook
+      records "no answer", and it stops there for a person to pick up. A second
+      attempt is a policy decision (how long to wait, how many times) before it
+      is code, and the attempt cap already bounds it.
+- [ ] `appointments` route, so the builder can show what the engine booked.
+      `schedule_appointment` writes the row; nothing reads it back yet.
+- [ ] Decide whether a `parked` run should ever time out. A call whose webhook
+      never arrives currently stays parked forever, which is visible but never
+      resolves.
 
 ### 2. PDF intake
 

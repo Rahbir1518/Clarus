@@ -96,6 +96,14 @@ WRITABLE_COLUMNS: Final[dict[str, frozenset[str]]] = {
         {
             "patient_id", "workflow_id", "trigger_node", "status", "outcome",
             "keypress", "execution_log",
+            # The zone the agent resolved spoken dates in, and the zone the
+            # resume path reads "14:30" back as. Written by the engine rather
+            # than by a browser, and listed here rather than given a narrow
+            # method because the blast radius of a wrong value is one tenant
+            # mis-recording the timezone of their own call — unlike
+            # conversation_id below, where a wrong value reaches into somebody
+            # else's.
+            "timezone",
             # The review queue: a human decides a call has been dealt with.
             # Every other outcome column from 002_call_outcomes.sql is absent
             # deliberately — patient_confirmed, reached_patient, confirmed_date
