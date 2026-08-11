@@ -14,6 +14,7 @@ import {
   createMedication,
   updateMedication,
   deleteMedication,
+  importPdfToPatient,
 } from "@/services/api";
 
 import Link from "next/link";
@@ -41,6 +42,8 @@ import {
   CheckCircle2,
   FileText,
   Pill,
+  Upload,
+  Loader2,
 } from "lucide-react";
 
 const riskStyles: Record<string, string> = {
@@ -93,6 +96,7 @@ export default function PatientDetailPage({
   const [editingMedicationId, setEditingMedicationId] = useState<string | null>(null);
 
   const [pdfImportResult, setPdfImportResult] = useState<any>(null);
+  const [importingPdf, setImportingPdf] = useState(false);
 
   useEffect(() => {
     try {
@@ -154,6 +158,22 @@ export default function PatientDetailPage({
     } catch { /* ignore */ }
     finally { setSavingProfile(false); }
   }, [patientId, profileForm]);
+
+  const handleImportPdf = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportingPdf(true);
+    try {
+      const result = await importPdfToPatient(file, patientId);
+      setPdfImportResult(result);
+      await fetchData();
+    } catch (err: any) {
+      alert(err.message || "PDF import failed");
+    } finally {
+      setImportingPdf(false);
+      e.target.value = "";
+    }
+  }, [patientId, fetchData]);
 
   const handleAddCondition = useCallback(async () => {
     if (!conditionForm.icd10_code.trim() || !conditionForm.description.trim()) return;
@@ -315,6 +335,16 @@ export default function PatientDetailPage({
                 <Edit3 className="size-3.5" />
                 {editingProfile ? "Cancel" : "Edit Profile"}
               </Button>
+              <label className="cursor-pointer">
+                <input type="file" accept=".pdf" className="hidden" onChange={handleImportPdf} disabled={importingPdf} />
+                <span className={cn(
+                  "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+                  importingPdf ? "opacity-60 cursor-wait" : "hover:bg-muted"
+                )}>
+                  {importingPdf ? <Loader2 className="size-3.5 animate-spin" /> : <Upload className="size-3.5" />}
+                  {importingPdf ? "Importing…" : "Import PDF"}
+                </span>
+              </label>
             </div>
             <p className="text-sm text-muted-foreground mt-0.5">
               {patient.dob && `DOB: ${patient.dob}`}
@@ -395,7 +425,9 @@ export default function PatientDetailPage({
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="size-4 text-success" />
-                <p className="text-sm font-semibold text-success">Patient created from PDF</p>
+                <p className="text-sm font-semibold text-success">
+                  {pdfImportResult.updated_fields !== undefined ? "Data imported from PDF" : "Patient created from PDF"}
+                </p>
               </div>
               <button onClick={() => setPdfImportResult(null)} className="text-xs text-muted-foreground hover:text-foreground underline">Dismiss</button>
             </div>

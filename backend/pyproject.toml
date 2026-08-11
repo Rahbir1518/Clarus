@@ -16,6 +16,12 @@ dependencies = [
     "httpx>=0.28",
     # Reads agents/*.yaml — the agent definitions kept under version control.
     "pyyaml>=6.0",
+    # Deterministic lab-report ingestion: pdfplumber extracts text and tables
+    # (pulls pdfminer.six); python-multipart is what lets FastAPI parse the
+    # multipart/form-data the PDF arrives in — without it a Form/UploadFile
+    # route raises at import with "Form data requires python-multipart".
+    "pdfplumber>=0.11",
+    "python-multipart>=0.0.9",
     # zoneinfo needs a tz database, and Windows ships none — without this the
     # calling-hours gate cannot resolve Asia/Dhaka and fails closed, so no call
     # is ever placed from a Windows development machine. Pinned as a real
