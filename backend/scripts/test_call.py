@@ -5,11 +5,18 @@ This is the shortest path between "I have an ElevenLabs account" and "my phone
 rang and the agent behaved correctly". Use it to iterate on the prompt in
 agents/*.yaml before wiring anything else up.
 
-    python scripts/test_call.py --to +15551234567
-    python scripts/test_call.py --to +15551234567 --patient-name "Alex Kim"
+    python scripts/test_call.py                        # calls CALL_ALLOWED_NUMBERS[0]
+    python scripts/test_call.py --to +8801712345678
+    python scripts/test_call.py --transport whatsapp   # override CALL_TRANSPORT
     python scripts/test_call.py --conversation conv_abc123   # fetch a result
 
-IT PLACES A REAL PHONE CALL AND COSTS REAL MONEY. Point it at your own phone.
+IT PLACES A REAL CALL AND COSTS REAL MONEY. It only dials numbers listed in
+CALL_ALLOWED_NUMBERS in backend/.env — put your own number there.
+
+The workflow's other gates (kill switch, calling hours, attempt limit) are
+skipped on purpose: this tests the agent, and CALLS_ENABLED stays false while
+you do. The allowlist is the one gate it keeps, because a typo in --to would
+otherwise ring a stranger.
 """
 from __future__ import annotations
 
@@ -21,7 +28,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from app.core.config import MissingConfiguration, get_settings  # noqa: E402
+from app.engine.policy import normalise_phone  # noqa: E402
 from app.integrations.elevenlabs.client import (  # noqa: E402
+    TRANSPORTS,
     ElevenLabsClient,
     ElevenLabsError,
 )
@@ -47,14 +57,21 @@ def build_dynamic_variables(args: argparse.Namespace) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--to", help="Destination number in E.164, e.g. +15551234567")
+    parser.add_argument(
+        "--to",
+        help="Destination in E.164, e.g. +8801712345678. Defaults to the first "
+        "entry of CALL_ALLOWED_NUMBERS, and must be in that list.",
+    )
+    parser.add_argument(
+        "--transport", choices=TRANSPORTS, help="Defaults to CALL_TRANSPORT."
+    )
     parser.add_argument("--conversation", help="Fetch a finished conversation instead")
     parser.add_argument("--patient-name", default="Alex Kim")
     parser.add_argument("--doctor-name", default="Dr. Morgan Reyes")
     parser.add_argument("--practice-name", default="Clarus Family Health")
     parser.add_argument("--reason", default="your annual check-up")
     parser.add_argument("--callback-number", default="+15550000000")
-    parser.add_argument("--timezone", default="America/Toronto")
+    parser.add_argument("--timezone", default="Asia/Dhaka")
     parser.add_argument("--agent-id", default=None)
     parser.add_argument("--phone-number-id", default=None)
     parser.add_argument(
@@ -99,27 +116,56 @@ def main() -> int:
             print(f"bookable:          {result.is_bookable}")
             return 0
 
-        if not args.to:
-            parser.error("one of --to, --conversation or --list-numbers is required")
+        settings = get_settings()
+        allowed = [normalise_phone(n) for n in settings.call_allowed_number_list]
+        if not allowed:
+            print(
+                "ERROR: CALL_ALLOWED_NUMBERS in backend/.env is empty. Put your own "
+                "number there (E.164, e.g. +8801712345678) and run this again.",
+                file=sys.stderr,
+            )
+            return 2
+        to = normalise_phone(args.to) if args.to else allowed[0]
+        if to not in allowed:
+            print(
+                f"ERROR: {to} is not in CALL_ALLOWED_NUMBERS. This script only "
+                "dials numbers you have listed there.",
+                file=sys.stderr,
+            )
+            return 2
+        transport = args.transport or settings.call_transport_name
 
         variables = build_dynamic_variables(args)
         print("Dynamic variables:")
         for key, value in variables.items():
             print(f"  {key:<20} {value}")
 
-        print(f"\nCalling {args.to} ...")
-        response = client.outbound_call(
-            to_number=args.to,
-            dynamic_variables=variables,
-            agent_id=args.agent_id,
-            agent_phone_number_id=args.phone_number_id,
-        )
-    except ElevenLabsError as exc:
+        print(f"\nCalling {to} over {transport} ...")
+        if transport == "whatsapp":
+            print(
+                "(If you have not granted this business call permission on "
+                "WhatsApp yet, you get a permission request message first; the "
+                "call comes once you accept it.)"
+            )
+            response = client.whatsapp_outbound_call(
+                to_number=to, dynamic_variables=variables, agent_id=args.agent_id
+            )
+        else:
+            response = client.outbound_call(
+                to_number=to,
+                dynamic_variables=variables,
+                agent_id=args.agent_id,
+                agent_phone_number_id=args.phone_number_id,
+            )
+    except (ElevenLabsError, MissingConfiguration) as exc:
         print(f"\nERROR: {exc}", file=sys.stderr)
         return 1
 
     conversation_id = response.get("conversation_id")
-    print(f"\nQueued. conversation_id={conversation_id} call_sid={response.get('callSid')}")
+    print(f"\nQueued. conversation_id={conversation_id}")
+    if not conversation_id:
+        print("No conversation id yet: the call is waiting on WhatsApp call permission.")
+        return 0
     print("\nAfter the call ends, read the result back with:")
     print(f"  python scripts/test_call.py --conversation {conversation_id}")
     return 0

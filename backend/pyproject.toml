@@ -21,6 +21,11 @@ dependencies = [
     # is ever placed from a Windows development machine. Pinned as a real
     # dependency rather than left to the OS so every platform behaves the same.
     "tzdata>=2024.1",
+    # PDF intake. Pure Python with no network code, chosen over pdfplumber for
+    # exactly that: app/ingest must never be able to send a document anywhere.
+    "pypdf>=5.0",
+    # FastAPI needs it to accept multipart uploads at all.
+    "python-multipart>=0.0.18",
 ]
 
 [project.optional-dependencies]

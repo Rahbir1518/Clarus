@@ -383,7 +383,9 @@ def _call_patient(ctx: RunContext, node: Node) -> Outcome:
     )
 
     try:
-        response = ElevenLabsClient().outbound_call(
+        # Twilio or WhatsApp, per CALL_TRANSPORT. Every gate above applies to
+        # both; nothing below cares which was used.
+        response = ElevenLabsClient().place_call(
             to_number=phone, dynamic_variables=variables
         )
     except ElevenLabsError as exc:

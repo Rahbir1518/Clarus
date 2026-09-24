@@ -60,6 +60,24 @@ class Settings(BaseSettings):
     elevenlabs_agent_id: str = ""
     elevenlabs_phone_number_id: str = ""
 
+    # How an outbound call reaches the patient: "twilio" (a phone number
+    # imported into ElevenLabs, used with elevenlabs_phone_number_id) or
+    # "whatsapp" (a WhatsApp Business number connected in ElevenLabs). Same
+    # agent, same dynamic variables, same post-call webhook either way — see
+    # ElevenLabsClient.place_call.
+    call_transport: str = "twilio"
+
+    # WhatsApp. The phone number *id* from the ElevenLabs WhatsApp page
+    # (menu -> Copy phone number ID), not the number itself.
+    elevenlabs_whatsapp_phone_number_id: str = ""
+    # WhatsApp only lets a business call someone who has granted permission.
+    # ElevenLabs asks for it by sending this Meta-approved template, which must
+    # contain a call-permission-request component. Its text is fixed at Meta
+    # approval time, so it is not a path for clinical content to reach a patient.
+    whatsapp_call_permission_template_name: str = ""
+    # Meta's language code for that template: "bn" for Bangla, "en_US", ...
+    whatsapp_call_permission_template_language: str = "bn"
+
     # Shared secret from the ElevenLabs webhook settings. Without it the
     # webhook route refuses every request rather than trusting unsigned input —
     # the old backend accepted anything, so anyone could POST a fake
@@ -132,6 +150,10 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def call_transport_name(self) -> str:
+        return self.call_transport.strip().lower()
 
     @property
     def is_production(self) -> bool:

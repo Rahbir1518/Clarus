@@ -50,7 +50,7 @@ class _StubElevenLabs:
     def __call__(self, *_args, **_kwargs) -> "_StubElevenLabs":
         return self
 
-    def outbound_call(self, *, to_number: str, dynamic_variables: dict, **_kw) -> dict:
+    def place_call(self, *, to_number: str, dynamic_variables: dict, **_kw) -> dict:
         self._recorder.append(
             {
                 "to_number": to_number,

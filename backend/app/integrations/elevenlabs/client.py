@@ -27,6 +27,14 @@ DEFAULT_TIMEOUT = httpx.Timeout(30.0, connect=10.0)
 OUTBOUND_CALL_PATH = "/v1/convai/twilio/outbound-call"
 # SIP trunk: "/v1/convai/sip-trunk/outbound-call"
 
+# WhatsApp is not a drop-in for the path above: its body names a WhatsApp
+# phone number id, a recipient id and a permission template rather than an
+# agent phone number. Hence its own method, and place_call() to choose.
+# https://elevenlabs.io/docs/api-reference/whats-app/outbound-call
+WHATSAPP_OUTBOUND_CALL_PATH = "/v1/convai/whatsapp/outbound-call"
+
+TRANSPORTS = ("twilio", "whatsapp")
+
 
 class ElevenLabsError(RuntimeError):
     """An ElevenLabs API call failed."""
@@ -147,6 +155,85 @@ class ElevenLabsClient:
         )
         return result
 
+    def whatsapp_outbound_call(
+        self,
+        *,
+        to_number: str,
+        dynamic_variables: dict[str, Any],
+        agent_id: str | None = None,
+        whatsapp_phone_number_id: str | None = None,
+        permission_template_name: str | None = None,
+        permission_template_language: str | None = None,
+    ) -> dict:
+        """Call a patient on WhatsApp.
+
+        WhatsApp requires the recipient's permission before a business may call
+        them. ElevenLabs handles that: if permission is already granted the call
+        is placed now; if not, it sends the permission-request template and
+        dials **when the patient approves** — which may be hours later, and so
+        outside the calling-hours window the workflow checked. For the pilot,
+        have the patient grant permission first. `conversation_id` may be null
+        in that case, which the call_patient node treats as needing review.
+        """
+        settings = get_settings()
+        if agent_id is None:
+            require("elevenlabs_agent_id")
+            agent_id = settings.elevenlabs_agent_id
+        if whatsapp_phone_number_id is None:
+            require("elevenlabs_whatsapp_phone_number_id")
+            whatsapp_phone_number_id = settings.elevenlabs_whatsapp_phone_number_id
+        if permission_template_name is None:
+            require("whatsapp_call_permission_template_name")
+            permission_template_name = settings.whatsapp_call_permission_template_name
+        permission_template_language = (
+            permission_template_language
+            or settings.whatsapp_call_permission_template_language
+        )
+
+        payload = {
+            "agent_id": agent_id,
+            "whatsapp_phone_number_id": whatsapp_phone_number_id,
+            "whatsapp_user_id": whatsapp_user_id(to_number),
+            "whatsapp_call_permission_request_template_name": permission_template_name,
+            "whatsapp_call_permission_request_template_language_code": (
+                permission_template_language
+            ),
+            "conversation_initiation_client_data": {
+                "dynamic_variables": _stringify(dynamic_variables),
+            },
+        }
+
+        result = self._request("POST", WHATSAPP_OUTBOUND_CALL_PATH, json=payload)
+        if not result.get("success", False):
+            raise ElevenLabsError(
+                f"ElevenLabs declined the WhatsApp call: {result.get('message', result)}"
+            )
+        logger.info(
+            "WhatsApp call queued: conversation_id=%s", result.get("conversation_id")
+        )
+        return result
+
+    def place_call(self, *, to_number: str, dynamic_variables: dict[str, Any]) -> dict:
+        """Place an outbound call over whichever transport CALL_TRANSPORT names.
+
+        The one place that knows there is more than one. Callers get back a
+        response carrying `conversation_id`, whichever was used.
+        """
+        transport = get_settings().call_transport_name
+        if transport == "whatsapp":
+            return self.whatsapp_outbound_call(
+                to_number=to_number, dynamic_variables=dynamic_variables
+            )
+        if transport == "twilio":
+            return self.outbound_call(
+                to_number=to_number, dynamic_variables=dynamic_variables
+            )
+        # Unknown is a refusal, not a default: a typo must not route a patient
+        # call over a carrier nobody chose.
+        raise ElevenLabsError(
+            f"CALL_TRANSPORT={transport!r} is not one of {', '.join(TRANSPORTS)}."
+        )
+
     def conversation_token(self, agent_id: str | None = None) -> str:
         """Mint a short-lived token letting a browser open a WebRTC session.
 
@@ -173,6 +260,21 @@ class ElevenLabsClient:
     def get_conversation(self, conversation_id: str) -> dict:
         """Fetch a conversation, including transcript and analysis once done."""
         return self._request("GET", f"/v1/convai/conversations/{conversation_id}")
+
+
+def whatsapp_user_id(e164: str) -> str:
+    """WhatsApp's recipient id: the E.164 number as digits, without the '+'.
+
+    Only accepts international form. Stripping a local "017..." to digits would
+    produce an id WhatsApp reads as some other country's number.
+    """
+    number = e164.strip()
+    digits = "".join(ch for ch in number if ch.isdigit())
+    if not number.startswith("+") or not 8 <= len(digits) <= 15:
+        raise ElevenLabsError(
+            f"{number!r} is not an international number (+<country><number>)."
+        )
+    return digits
 
 
 def _stringify(variables: dict[str, Any]) -> dict[str, Any]:
