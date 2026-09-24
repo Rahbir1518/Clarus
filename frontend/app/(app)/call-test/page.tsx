@@ -13,7 +13,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { WebCall } from "@/components/web-call";
+import { WebCall } from "@/components/calls/web-call";
 import { listCallLogs, listPatients } from "@/services/api";
 
 type Patient = { id: string; name: string; phone?: string };

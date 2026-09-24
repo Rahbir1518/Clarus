@@ -1,11 +1,11 @@
 # Clarus backend — status, setup, and what's next
 
-Current as of 2026-08-09. Companion to [README.md](README.md), which explains
+Current as of 2026-08-09. Companion to [backend/README.md](../backend/README.md), which explains
 *how* the foundation works; this file records *what is built*, *what you must
 run*, and *what is deliberately missing*.
 
 What the AI agent may and may not say is its own document:
-[../AI_CALL_SAFETY_POLICY.md](../AI_CALL_SAFETY_POLICY.md). Read it before
+[ai-call-safety-policy.md](ai-call-safety-policy.md). Read it before
 changing anything under `app/engine/`.
 
 ---
@@ -97,7 +97,7 @@ SELECT * FROM (
 ```
 
 To prove the policies actually refuse a cross-tenant write, run the block in
-[migrations/001_rls.sql](migrations/001_rls.sql)'s header notes — seed two
+[migrations/001_rls.sql](../backend/migrations/001_rls.sql)'s header notes — seed two
 tenants, grant `authenticated` just enough to reach the policies, attempt a
 forged referral, and `ROLLBACK`. The `INSERT` erroring with `42501` is the pass
 condition.
@@ -258,7 +258,7 @@ is the clearest case: if the timezone cannot be loaded it blocks the call rather
 than assuming UTC, which is the difference between no call and a call at 3am.
 `CALLS_ENABLED` defaults to false for the same reason.
 
-See [../AI_CALL_SAFETY_POLICY.md](../AI_CALL_SAFETY_POLICY.md), including its
+See [ai-call-safety-policy.md](ai-call-safety-policy.md), including its
 known gaps — the policy is honest about what is enforced and what is still only
 written down.
 

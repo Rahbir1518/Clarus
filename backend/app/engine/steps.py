@@ -33,7 +33,7 @@ directly by the run panel in `frontend/components/workflow/WorkflowBuilder.tsx`.
 Renaming one silently empties a line in the UI rather than failing.
 
 Clinical values are allowed in `message`. See the destinations table in
-AI_CALL_SAFETY_POLICY.md — this log is the run's own tenant-scoped record and a
+docs/ai-call-safety-policy.md — this log is the run's own tenant-scoped record and a
 run that branched on a value has to be able to say which value. `audit_log`
 metadata and SSE events are the ones that must stay clean.
 """

@@ -1,7 +1,7 @@
 # Clarus backend
 
 FastAPI + Supabase/Postgres. Rebuilt from scratch on 2026-07-25; the previous
-backend was deleted rather than repaired. See [AUDIT.md](../AUDIT.md) for why.
+backend was deleted rather than repaired. See [docs/audit.md](../docs/audit.md) for why.
 
 The old code is not lost — it is at commit `91382a9`:
 
@@ -14,7 +14,7 @@ git checkout 91382a9 -- backend                   # restore the whole tree
 
 ## What exists today
 
-> **[STATUS.md](STATUS.md) is the current record** — full endpoint inventory,
+> **[docs/backend-status.md](../docs/backend-status.md) is the current record** — full endpoint inventory,
 > which frontend pages work, the migrations to apply and how to verify them,
 > the accounts and credentials you need, and what is deliberately unbuilt.
 > This section is a summary; that file is the one to keep up to date.
@@ -37,12 +37,12 @@ git checkout 91382a9 -- backend                   # restore the whole tree
 | ElevenLabs client + outbound calling | ✅ `app/integrations/elevenlabs/` |
 | Post-call webhook, signature-verified | ✅ `app/api/routes/webhooks.py` |
 | Workflow engine — graph walk, park at the call, resume from the webhook | ✅ `app/engine/` |
-| AI call safety policy, enforced in code | ✅ [`../AI_CALL_SAFETY_POLICY.md`](../AI_CALL_SAFETY_POLICY.md), `app/engine/policy.py` |
+| AI call safety policy, enforced in code | ✅ [`../docs/ai-call-safety-policy.md`](../docs/ai-call-safety-policy.md), `app/engine/policy.py` |
 | `POST /api/workflows/{id}/execute`, `POST /api/lab-event` | ✅ `app/api/routes/executions.py` |
 | Test suite (225 tests) | ✅ `tests/` |
-| One real call, one real webhook | ⚠️ never exercised — see STATUS.md "Known gaps" |
+| One real call, one real webhook | ⚠️ never exercised — see docs/backend-status.md "Known gaps" |
 | PDF intake, Google Calendar | ❌ not built |
-| Appointments, lab orders, referrals, notifications, reports | ❌ no page calls them — see STATUS.md |
+| Appointments, lab orders, referrals, notifications, reports | ❌ no page calls them — see docs/backend-status.md |
 
 ---
 
@@ -126,7 +126,7 @@ places a real call with no database involved.
 **`agents/appointment_confirmation.yaml` is the source of truth. The dashboard
 is a rendering of it.**
 
-[AUDIT.md §2a](../AUDIT.md) identified the old agent as the project's single
+[docs/audit.md §2a](../docs/audit.md) identified the old agent as the project's single
 unrecoverable dependency: its prompt, its six data-collection fields and its
 Twilio binding existed only in the ElevenLabs dashboard, so losing account
 access meant reconstructing it from the field names the backend happened to

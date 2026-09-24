@@ -15,7 +15,7 @@ free-text field, and `callback_number` another, both sent by the browser and bot
 read aloud. The reasoning at the time was that they describe the appointment
 rather than the person, which is true and is not the point: any free-text field
 spoken to a patient is a channel for saying anything at all, including a lab
-result. See AI_CALL_SAFETY_POLICY.md.
+result. See docs/ai-call-safety-policy.md.
 
 So the reason is now a code resolved against a fixed vocabulary, and the callback
 number comes from configuration. The client picks from a list; it does not write

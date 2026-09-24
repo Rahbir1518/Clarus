@@ -22,7 +22,7 @@
 > ### ⚠️ Status: backend rebuild in progress (as of 2026-07-25)
 >
 > The backend was deleted and is being rebuilt from scratch. See
-> [AUDIT.md](AUDIT.md) for why, and [backend/README.md](backend/README.md) for
+> [docs/audit.md](docs/audit.md) for why, and [backend/README.md](backend/README.md) for
 > what exists today.
 >
 > **Sections below marked _(pre-rebuild)_ describe the old backend and are kept
@@ -37,10 +37,10 @@
 > call, and resumes from the post-call webhook. No real call has been placed
 > through it yet. Google Calendar and PDF processing are not built.
 >
-> **[PROGRESS.md](PROGRESS.md)** — what is done, in progress, and left to do.
-> **[backend/STATUS.md](backend/STATUS.md)** — endpoint inventory, migrations to
+> **[docs/progress.md](docs/progress.md)** — what is done, in progress, and left to do.
+> **[docs/backend-status.md](docs/backend-status.md)** — endpoint inventory, migrations to
 > apply, accounts you need, and what is deliberately unbuilt.
-> **[AI_CALL_SAFETY_POLICY.md](AI_CALL_SAFETY_POLICY.md)** — what the agent may
+> **[docs/ai-call-safety-policy.md](docs/ai-call-safety-policy.md)** — what the agent may
 > say to a patient, and what stops it saying anything else.
 >
 > The old backend remains readable at commit `91382a9`.
@@ -315,7 +315,7 @@ Process input, return TwiML
 > ✅ Now implemented. `middleware.ts` protects every route that is not
 > explicitly listed as public, so protection is the default and a new route is
 > covered without anyone remembering to add it. This closes
-> [AUDIT.md §4](AUDIT.md), which recorded that `(app)/layout.tsx` destructured
+> [docs/audit.md §4](docs/audit.md), which recorded that `(app)/layout.tsx` destructured
 > `isAuthenticated` and never used it — every "protected" route rendered for
 > anyone. Note that this only governs which pages are served: the backend
 > verifies its own token independently on every request.

@@ -13,7 +13,7 @@ which placeholders exist; this is the source of truth for what fills them.
 Nothing here takes a value from a request body. Every one of these is said to a
 patient, so `appointment_reason` arrives already resolved through
 `app.engine.policy.resolve_call_reason` — a phrase from a fixed vocabulary,
-never free text. See AI_CALL_SAFETY_POLICY.md.
+never free text. See docs/ai-call-safety-policy.md.
 """
 from __future__ import annotations
 

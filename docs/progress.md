@@ -3,10 +3,10 @@
 Where the build actually stands. Last updated 2026-08-09.
 
 **Four docs, four jobs.** This one tracks *what is done and what is next*.
-[backend/STATUS.md](backend/STATUS.md) is the reference for *what exists and
-how to run it*. [AI_CALL_SAFETY_POLICY.md](AI_CALL_SAFETY_POLICY.md) states what
+[backend-status.md](backend-status.md) is the reference for *what exists and
+how to run it*. [ai-call-safety-policy.md](ai-call-safety-policy.md) states what
 the agent may and may not say, and which of those rules are enforced in code.
-[REBUILD_CHECKLIST.md](REBUILD_CHECKLIST.md) is the much larger list of what a
+[rebuild-checklist.md](rebuild-checklist.md) is the much larger list of what a
 system holding real patient data in real clinics needs — most of it is still
 unticked, and that is the honest position.
 
@@ -100,7 +100,7 @@ The blocker this list has been pointing at since the rebuild started. Built in
 ### AI call safety
 
 Written before the engine, and the reason several engine decisions look
-restrictive. Full text and known gaps: [AI_CALL_SAFETY_POLICY.md](AI_CALL_SAFETY_POLICY.md).
+restrictive. Full text and known gaps: [ai-call-safety-policy.md](ai-call-safety-policy.md).
 
 - [x] **The agent never discloses clinical results.** It says results are ready
       and books a time.
@@ -139,9 +139,9 @@ restrictive. Full text and known gaps: [AI_CALL_SAFETY_POLICY.md](AI_CALL_SAFETY
 
 ### Docs
 
-- [x] `backend/STATUS.md` — endpoints, migrations, accounts, deliberate gaps
+- [x] `backend-status.md` — endpoints, migrations, accounts, deliberate gaps
 - [x] `backend/README.md` and root `README.md` status corrected
-- [x] `AI_CALL_SAFETY_POLICY.md` — what the agent may say, what enforces it,
+- [x] `ai-call-safety-policy.md` — what the agent may say, what enforces it,
       and what is still only a promise
 
 ---
@@ -247,7 +247,7 @@ but nothing calls them, and an unused endpoint is attack surface with no user.
 - [ ] Separate `local` / `staging` / `production` environments — separate
       databases, separate keys, separate phone numbers
 
-### 7. Before real patient data — read REBUILD_CHECKLIST.md
+### 7. Before real patient data — read rebuild-checklist.md
 
 Not a formality, and not optional.
 

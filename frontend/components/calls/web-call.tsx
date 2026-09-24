@@ -24,7 +24,7 @@ type Props = {
    * Which of the permitted reasons the patient is given for the call — a code,
    * not a sentence. The words themselves live on the server and are not settable
    * from here, because anything settable from here is spoken to a patient. See
-   * AI_CALL_SAFETY_POLICY.md.
+   * docs/ai-call-safety-policy.md.
    *
    * The callback number a voicemail asks the patient to ring is configuration
    * (PRACTICE_CALLBACK_NUMBER), for the same reason.

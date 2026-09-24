@@ -36,7 +36,7 @@ node, the visited set, the graph fingerprint and the triggering event.
 
 What is still missing is a timer. A run whose webhook never arrives stays parked
 for ever, visible only as `needs_review`. That is recorded in
-AI_CALL_SAFETY_POLICY.md under "not yet enforced" and it is the next thing this
+docs/ai-call-safety-policy.md under "not yet enforced" and it is the next thing this
 module needs.
 """
 from __future__ import annotations

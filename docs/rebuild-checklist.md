@@ -1,7 +1,7 @@
 # Clarus — Ground-Up Rebuild Checklist
 
 **Purpose:** Everything needed to rebuild this project from an empty directory, optimized for correctness and security.
-**Companion doc:** [AUDIT.md](AUDIT.md) — items below marked *(prevents: …)* map to a specific failure found in the existing codebase.
+**Companion doc:** [audit.md](audit.md) — items below marked *(prevents: …)* map to a specific failure found in the existing codebase.
 
 ---
 
@@ -214,7 +214,7 @@ This question determines whether the product is viable, so answer it early.
 Engineering-adjacent, but it gates revenue and it shapes the product.
 
 - [ ] Incorporate. Vendor BAAs, insurance, and clinic contracts all require a company.
-- [ ] Move every vendor account to company ownership with ≥2 admins *(prevents: the exact situation this project is now in — see [AUDIT.md](AUDIT.md) §2a)*
+- [ ] Move every vendor account to company ownership with ≥2 admins *(prevents: the exact situation this project is now in — see [audit.md](audit.md) §2a)*
 - [ ] Prepare the **security questionnaire packet** clinics will ask for, before they ask:
   - [ ] PIA and TRA summaries
   - [ ] Architecture and data-flow diagram

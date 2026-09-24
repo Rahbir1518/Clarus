@@ -9,7 +9,7 @@ Three rules hold across all of them:
 
 1. **A handler that cannot do its job returns `failed` or `blocked`, and the
    branch stops.** Nothing returns `ok` on the strength of having tried. The
-   failure this prevents is named in REBUILD_CHECKLIST.md: "generate transcript"
+   failure this prevents is named in docs/rebuild-checklist.md: "generate transcript"
    and "send summary" running after a call that never connected.
 
 2. **A missing input is not a false.** A conditional that cannot find the value
@@ -428,7 +428,7 @@ def _send_sms(ctx: RunContext, node: Node) -> Outcome:
     """Not implemented, and loud about it.
 
     There is no SMS provider in this backend. `app/integrations/` has an
-    ElevenLabs client and nothing else, and STATUS.md records that Twilio
+    ElevenLabs client and nothing else, and docs/backend-status.md records that Twilio
     credentials go to ElevenLabs rather than here.
 
     A logged no-op returning `ok` was the alternative and is worse than useless:
@@ -504,7 +504,7 @@ def _send_notification(ctx: RunContext, node: Node) -> Outcome:
     """Tell somebody on the staff.
 
     Clinical content is allowed here — see the destinations table in
-    AI_CALL_SAFETY_POLICY.md. This is an internal row read by the practice, not
+    docs/ai-call-safety-policy.md. This is an internal row read by the practice, not
     words spoken to a patient.
     """
     row = ctx.scope.insert_for_patient(
@@ -679,7 +679,7 @@ def _create_report(ctx: RunContext, node: Node) -> Outcome:
     No `reports` row is written, and that is a gap rather than a design: the
     table exists and RLS covers it, but it has no entry in `PATIENT_CHILD_TABLES`
     or `WRITABLE_COLUMNS`, so the application cannot write to it at all. See
-    "Deliberately not built" in backend/STATUS.md.
+    "Deliberately not built" in docs/backend-status.md.
 
     Summarising into the log is the honest version of what this node can do
     today — the report is real, its storage is not yet separate.

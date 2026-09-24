@@ -1,4 +1,4 @@
-"""AI_CALL_SAFETY_POLICY.md, as code.
+"""docs/ai-call-safety-policy.md, as code.
 
 Read that document first. This module is its enforcement, and the two are meant
 to be checkable against each other — every **enforced** claim there is a
@@ -128,7 +128,7 @@ def assert_no_clinical_params(params: dict[str, str]) -> None:
             "This call carries clinical content in "
             + ", ".join(offending)
             + ". The voice agent never discloses clinical results — see "
-            "AI_CALL_SAFETY_POLICY.md. Remove the parameter and use a "
+            "docs/ai-call-safety-policy.md. Remove the parameter and use a "
             "reason_code, or route this branch to a human."
         )
 

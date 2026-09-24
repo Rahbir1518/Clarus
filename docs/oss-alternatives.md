@@ -1,7 +1,7 @@
 # Clarus — Open-Source Alternatives Analysis
 
 **Question:** For each vendor in the stack, is there an open-source option that reduces cost?
-**Companion docs:** [AUDIT.md](AUDIT.md) · [REBUILD_CHECKLIST.md](REBUILD_CHECKLIST.md)
+**Companion docs:** [audit.md](audit.md) · [rebuild-checklist.md](rebuild-checklist.md)
 
 > ⚠️ **Verify every license and price before adopting.** Both change — several projects have relicensed in recent years (Sentry, Grafana, HashiCorp, Redis all did). Licenses noted below are a starting point for your own check, not legal advice.
 
@@ -11,9 +11,9 @@
 
 **1. Cost is not your best reason to do this. Control is.**
 
-In [REBUILD_CHECKLIST.md](REBUILD_CHECKLIST.md) Phase 0, the single biggest project risk is: *will ElevenLabs sign a BAA for a PHI workload?* If they won't, your voice layer is dead and the product with it.
+In [rebuild-checklist.md](rebuild-checklist.md) Phase 0, the single biggest project risk is: *will ElevenLabs sign a BAA for a PHI workload?* If they won't, your voice layer is dead and the product with it.
 
-Self-hosting the voice pipeline makes that question disappear. PHI never leaves infrastructure you control, so there's no agreement to negotiate. **That's the real argument — the cost savings are a bonus.** Same logic applies to logging: self-hosted log storage fixes the PHI-in-Render's-logs breach identified in [AUDIT.md](AUDIT.md) §4.
+Self-hosting the voice pipeline makes that question disappear. PHI never leaves infrastructure you control, so there's no agreement to negotiate. **That's the real argument — the cost savings are a bonus.** Same logic applies to logging: self-hosted log storage fixes the PHI-in-Render's-logs breach identified in [audit.md](audit.md) §4.
 
 **2. Self-hosting AI costs *more* than a vendor below a volume threshold.**
 
@@ -103,13 +103,13 @@ Auth0 pricing escalates sharply exactly where you're headed: multi-tenant organi
 
 **Verdict: swap, and do it during the rebuild rather than later.** Identity is painful to migrate once you have real clinic users. Bonus: credentials stay in your Canadian infrastructure, which helps the data-residency story.
 
-⚠️ Auth0 currently supplies the Google Calendar token (badly — see [AUDIT.md](AUDIT.md) §5). If you move off Auth0, you own that OAuth flow directly. That's an improvement — you'll finally hold the refresh token — but budget for it.
+⚠️ Auth0 currently supplies the Google Calendar token (badly — see [audit.md](audit.md) §5). If you move off Auth0, you own that OAuth flow directly. That's an improvement — you'll finally hold the refresh token — but budget for it.
 
 ---
 
 ### 🟢 Observability — swap, for compliance reasons
 
-[AUDIT.md](AUDIT.md) §4 found transcripts and clinical payloads being logged to stdout, landing PHI in Render's log store. Self-hosting logs puts that data back under your control.
+[audit.md](audit.md) §4 found transcripts and clinical payloads being logged to stdout, landing PHI in Render's log store. Self-hosting logs puts that data back under your control.
 
 | Need | Option | License |
 |---|---|---|
@@ -125,7 +125,7 @@ Auth0 pricing escalates sharply exactly where you're headed: multi-tenant organi
 
 ### 🟢 Workflow durability — adopt OSS, this fixes a real bug
 
-[AUDIT.md](AUDIT.md) §5: the current engine holds 20 minutes of state in `asyncio.create_task`, so a deploy silently orphans in-flight calls.
+[audit.md](audit.md) §5: the current engine holds 20 minutes of state in `asyncio.create_task`, so a deploy silently orphans in-flight calls.
 
 | Option | License | Notes |
 |---|---|---|
@@ -141,7 +141,7 @@ Auth0 pricing escalates sharply exactly where you're headed: multi-tenant organi
 
 ### 🟢 Clinical data / documents — adopt OSS, big quality win
 
-This replaces the regex PDF parsing that [AUDIT.md](AUDIT.md) §5 flags as a patient-safety issue, and it's what Phase 5b needs.
+This replaces the regex PDF parsing that [audit.md](audit.md) §5 flags as a patient-safety issue, and it's what Phase 5b needs.
 
 | Need | Option | License |
 |---|---|---|
@@ -198,7 +198,7 @@ But your pricing model is **usage-based per call**, and metering that correctly 
 | **Lago** | AGPL-3.0 | Open-source usage-based billing/metering. Good fit. ⚠️ AGPL. |
 | Kill Bill | Apache-2.0 | Mature, heavier |
 
-**Verdict: keep Stripe for processing.** Consider Lago if per-call metering gets complicated. Also — the hardcoded test-mode payment links from [AUDIT.md](AUDIT.md) §2 need removing regardless.
+**Verdict: keep Stripe for processing.** Consider Lago if per-call metering gets complicated. Also — the hardcoded test-mode payment links from [audit.md](audit.md) §2 need removing regardless.
 
 ---
 

@@ -13,7 +13,7 @@ export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000
 //
 // Clerk's `getToken` lives behind a React hook, which a plain module cannot
 // call. ClerkTokenBridge (mounted once in app/layout.tsx) registers it here at
-// startup; see app/providers/ClerkTokenBridge.tsx.
+// startup; see components/providers/ClerkTokenBridge.tsx.
 // ---------------------------------------------------------------------------
 
 type TokenGetter = () => Promise<string | null>;

@@ -107,7 +107,7 @@ class Settings(BaseSettings):
 
     # --- Outbound call gates -----------------------------------------------
     #
-    # See AI_CALL_SAFETY_POLICY.md. Every default here is the restrictive one,
+    # See docs/ai-call-safety-policy.md. Every default here is the restrictive one,
     # because each of these is a variable that someone will forget to set — and
     # a forgotten variable must mean fewer calls than intended, never more.
 

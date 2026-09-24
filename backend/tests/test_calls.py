@@ -114,7 +114,7 @@ def test_free_text_spoken_to_a_patient_is_refused(client, fake_db, auth_header):
 
     `appointment_reason` used to be 200 characters of client-supplied text read
     aloud by the agent, which is a channel for disclosing a lab result — the one
-    thing AI_CALL_SAFETY_POLICY.md forbids outright. `extra="forbid"` is what
+    thing docs/ai-call-safety-policy.md forbids outright. `extra="forbid"` is what
     makes an old caller fail loudly rather than have its sentence ignored.
     """
     patient = _patient(fake_db, ALICE)

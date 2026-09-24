@@ -1,7 +1,7 @@
 # Clarus — AI call safety policy
 
 Written 2026-08-09, before the workflow engine existed. That order is
-deliberate: [REBUILD_CHECKLIST.md](REBUILD_CHECKLIST.md) Phase 0 lists this
+deliberate: [rebuild-checklist.md](rebuild-checklist.md) Phase 0 lists this
 decision as one that has to be made before the code that would depend on it,
 because a policy written afterwards gets shaped by whatever was already built.
 

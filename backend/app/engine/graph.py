@@ -20,7 +20,7 @@ the builder wrote them. A run that is replayed produces the same log.
 
 Cycles
 ------
-Refused at run time by a visited set, per run, and REBUILD_CHECKLIST.md wants
+Refused at run time by a visited set, per run, and docs/rebuild-checklist.md wants
 them refused at save time too — that check does not exist yet. A cycle in a
 graph that places calls is an unbounded number of calls, so the run-time guard
 is not a formality: it is the thing standing between a mis-drawn edge and a
@@ -79,7 +79,7 @@ class Graph:
     # sha256 over the stored nodes and edges. Pins what actually ran: a
     # workflow is editable after it has been executed, and without this a run
     # cannot be explained later because its definition has moved. Short of the
-    # immutable versioning REBUILD_CHECKLIST.md Phase 6 asks for, but it is the
+    # immutable versioning docs/rebuild-checklist.md Phase 6 asks for, but it is the
     # part that makes a past run's log honest, and it needs no new table.
     fingerprint: str
 
@@ -222,7 +222,7 @@ def select_trigger(graph: Graph, trigger_node_type: str | None) -> Node:
     """Pick the trigger this run starts from.
 
     The `trigger_node_type` parameter is honoured, which is worth saying
-    because REBUILD_CHECKLIST.md records it being accepted, documented and
+    because docs/rebuild-checklist.md records it being accepted, documented and
     ignored in the previous system. A named type that the graph does not have is
     an error rather than a fallback to the first trigger — a lab-results event
     must not run a prescription-expiry workflow because the names did not match.

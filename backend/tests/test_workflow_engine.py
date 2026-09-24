@@ -11,7 +11,7 @@ that clinical text never reached it.
 
 What this suite cannot do, and it matters: `FakeSupabase` validates no schema, so
 a column the engine writes that does not exist in Postgres passes here. See
-"Known gaps" in backend/STATUS.md. Every column written by this engine is either
+"Known gaps" in docs/backend-status.md. Every column written by this engine is either
 already exercised by the webhook path or listed in `WRITABLE_COLUMNS`, but that
 is an argument, not a test.
 """
@@ -671,7 +671,7 @@ def test_a_missing_required_parameter_blocks_the_node(client, fake_db, auth_head
 
 
 # ---------------------------------------------------------------------------
-# The safety policy — AI_CALL_SAFETY_POLICY.md
+# The safety policy — docs/ai-call-safety-policy.md
 # ---------------------------------------------------------------------------
 
 

@@ -89,7 +89,7 @@ export const NODE_CATALOGUE: NodeCatalogueCategory[] = [
         // `reason_code` picks from a fixed vocabulary rather than accepting a
         // sentence. The agent never discloses a clinical result, so there is no
         // free-text field here for one to be written into — see
-        // AI_CALL_SAFETY_POLICY.md. A node still carrying the old
+        // docs/ai-call-safety-policy.md. A node still carrying the old
         // `lab_result_summary` parameter is refused by the engine, loudly,
         // rather than executed with the summary quietly dropped.
         nodeType: 'call_patient',

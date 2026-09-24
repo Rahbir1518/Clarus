@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { DM_Sans, Instrument_Serif, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { ClerkProvider } from "@clerk/nextjs";
-import ClerkTokenBridge from "./providers/ClerkTokenBridge";
+import ClerkTokenBridge from "@/components/providers/ClerkTokenBridge";
 
 const dmSans = DM_Sans({
   variable: "--font-dm-sans",

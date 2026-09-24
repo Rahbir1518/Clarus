@@ -28,7 +28,7 @@ class ExecuteWorkflow(BaseModel):
 
     # Which trigger the run starts from. Optional only because a workflow with
     # exactly one trigger has no ambiguity to resolve; with several, the engine
-    # requires it rather than picking. REBUILD_CHECKLIST.md records this
+    # requires it rather than picking. docs/rebuild-checklist.md records this
     # parameter being accepted, documented and ignored in the previous system.
     trigger_node_type: str | None = None
 
