@@ -281,7 +281,7 @@ def test_route_records_outcome_on_valid_signature(unauthenticated_client, fake_d
     fake_db.store["call_logs"] = [
         {"id": "log-1", "doctor_id": "user_2d1", "conversation_id": "conv_test_1"}
     ]
-    assert _post(unauthenticated_client, _body()).status_code == 204
+    assert _post(unauthenticated_client, _body()).status_code == 200
 
     row = fake_db.store["call_logs"][0]
     assert row["patient_confirmed"] is True
@@ -299,7 +299,7 @@ def test_route_cannot_reassign_a_call_to_another_tenant(unauthenticated_client, 
         {"id": "log-1", "doctor_id": "user_2victim", "conversation_id": "conv_test_1"}
     ]
     body = _body(doctor_id="user_2attacker", patient_id="patient-of-attacker")
-    assert _post(unauthenticated_client, body).status_code == 204
+    assert _post(unauthenticated_client, body).status_code == 200
 
     row = fake_db.store["call_logs"][0]
     assert row["doctor_id"] == "user_2victim"
@@ -307,9 +307,9 @@ def test_route_cannot_reassign_a_call_to_another_tenant(unauthenticated_client, 
 
 
 def test_route_acknowledges_unknown_conversation(unauthenticated_client, fake_db):
-    """204, not 404 — otherwise the endpoint is an existence oracle."""
+    """200, not 404 — otherwise the endpoint is an existence oracle."""
     fake_db.store["call_logs"] = []
-    assert _post(unauthenticated_client, _body()).status_code == 204
+    assert _post(unauthenticated_client, _body()).status_code == 200
 
 
 def test_route_ignores_other_event_types(unauthenticated_client, fake_db):
@@ -317,7 +317,7 @@ def test_route_ignores_other_event_types(unauthenticated_client, fake_db):
         {"id": "log-1", "doctor_id": "user_2d1", "conversation_id": "conv_test_1"}
     ]
     body = json.dumps({"type": "post_call_audio", "data": {}}).encode()
-    assert _post(unauthenticated_client, body).status_code == 204
+    assert _post(unauthenticated_client, body).status_code == 200
     assert "patient_confirmed" not in fake_db.store["call_logs"][0]
 
 

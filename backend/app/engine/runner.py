@@ -367,7 +367,7 @@ class ResumeSkipped(Exception):
     """There was nothing to resume, and that is not an error.
 
     A web call has no workflow. A webhook delivered twice has already been
-    resumed. Both are ordinary, and both must leave the webhook answering 204 —
+    resumed. Both are ordinary, and both must leave the webhook answering 200 —
     a provider retries on anything else.
     """
 

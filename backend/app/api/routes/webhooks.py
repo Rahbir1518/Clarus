@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["webhooks"])
 
 
-@router.post("/elevenlabs/webhook", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/elevenlabs/webhook", status_code=status.HTTP_200_OK)
 def elevenlabs_post_call(
     raw_body: RawBodyDep,
     client: SupabaseDep,
@@ -44,7 +44,11 @@ def elevenlabs_post_call(
 ) -> Response:
     """Receive a post-call result from ElevenLabs.
 
-    Always answers 204 once the signature is valid, including for calls this
+    200 rather than 204: ElevenLabs documents that the endpoint "must return a
+    200 status code", and retries, then eventually disables, a webhook it counts
+    as failing.
+
+    Always answers 200 once the signature is valid, including for calls this
     system does not recognise. A webhook endpoint that reports whether a
     conversation id exists is an oracle, and providers retry on non-2xx, so
     surfacing our own bookkeeping problems as errors just produces a retry
@@ -76,12 +80,12 @@ def elevenlabs_post_call(
         # Audio and failure events are signed and legitimate, just not consumed
         # here yet. Acknowledge so the provider stops retrying.
         logger.info("Ignoring ElevenLabs webhook of type %s", event_type)
-        return Response(status_code=status.HTTP_204_NO_CONTENT)
+        return Response(status_code=status.HTTP_200_OK)
 
     result = parse_post_call_payload(payload)
     if not result.conversation_id:
         logger.warning("post_call_transcription with no conversation_id")
-        return Response(status_code=status.HTTP_204_NO_CONTENT)
+        return Response(status_code=status.HTTP_200_OK)
 
     updates = {
         "status": "completed",
@@ -112,7 +116,7 @@ def elevenlabs_post_call(
             logger.warning(
                 "No call log for ElevenLabs conversation %s", result.conversation_id
             )
-            return Response(status_code=status.HTTP_204_NO_CONTENT)
+            return Response(status_code=status.HTTP_200_OK)
         review_reasons.append(
             "the call was placed when the patient granted WhatsApp permission, "
             "at a time no calling-hours check covered"
@@ -142,7 +146,7 @@ def elevenlabs_post_call(
     broker.publish(
         row.get("doctor_id", ""), Event("call_log.updated", str(row.get("id", "")))
     )
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    return Response(status_code=status.HTTP_200_OK)
 
 
 def _claim_deferred_call(

@@ -1057,7 +1057,7 @@ def test_a_call_parks_the_run_and_the_webhook_resumes_it(
     # The nodes after the call have not run yet.
     assert not any(s["node_type"] == "schedule_appointment" for s in _steps(started))
 
-    assert _webhook(client, "conv_1").status_code == 204
+    assert _webhook(client, "conv_1").status_code == 200
 
     row = _call_row(fake_db, call_log_id)
     log = row["execution_log"]
@@ -1136,8 +1136,8 @@ def test_a_second_webhook_delivery_does_not_run_the_graph_twice(
     workflow = _workflow(fake_db, *_call_graph())
     _run(client, auth_header, workflow["id"], patient["id"])
 
-    assert _webhook(client, "conv_1").status_code == 204
-    assert _webhook(client, "conv_1").status_code == 204
+    assert _webhook(client, "conv_1").status_code == 200
+    assert _webhook(client, "conv_1").status_code == 200
 
     assert len(fake_db.store["appointments"]) == 1
 
@@ -1160,7 +1160,7 @@ def test_editing_the_workflow_mid_call_stops_the_resume(
         {"nodes": nodes + [_node("extra", "log_completion")], "edges": edges},
     )
 
-    assert _webhook(client, "conv_1").status_code == 204
+    assert _webhook(client, "conv_1").status_code == 200
 
     row = _call_row(fake_db, call_log_id)
     resumed = next(s for s in row["execution_log"] if s["node_type"] == "run.resumed")
@@ -1172,7 +1172,7 @@ def test_editing_the_workflow_mid_call_stops_the_resume(
 
 def test_a_web_call_has_nothing_to_resume(client, fake_db, auth_header, monkeypatch):
     """Every call from routes/calls.py has no workflow. That is ordinary, and the
-    webhook must still answer 204."""
+    webhook must still answer 200."""
     from app.api.routes import calls as calls_route
 
     class _StubToken:
@@ -1197,14 +1197,14 @@ def test_a_web_call_has_nothing_to_resume(client, fake_db, auth_header, monkeypa
         headers=auth_header(ALICE),
     )
 
-    assert _webhook(client, "conv_web").status_code == 204
+    assert _webhook(client, "conv_web").status_code == 200
     assert _call_row(fake_db, call_log_id)["status"] == "completed"
 
 
 def test_a_webhook_for_a_call_nobody_placed_is_acknowledged(client, fake_db):
     """A 4xx here would tell an unauthenticated caller whether a conversation id
     exists, and would have the provider retry for ever."""
-    assert _webhook(client, "conv_unknown").status_code == 204
+    assert _webhook(client, "conv_unknown").status_code == 200
 
 
 # ---------------------------------------------------------------------------
@@ -1267,7 +1267,7 @@ def test_the_deferred_call_webhook_finds_its_run_and_resumes_it(
         client, "conv_later", dynamic_variables={RUN_REF_VARIABLE: ref}
     )
 
-    assert response.status_code == 204
+    assert response.status_code == 200
     row = _call_row(fake_db, call_log_id)
     assert row["conversation_id"] == "conv_later"
     assert row["outcome"] == "confirmed"
@@ -1292,7 +1292,7 @@ def test_a_forged_run_reference_claims_nothing(
         dynamic_variables={RUN_REF_VARIABLE: f"{call_log_id}.{'0' * 64}"},
     )
 
-    assert response.status_code == 204
+    assert response.status_code == 200
     assert _call_row(fake_db, call_log_id).get("conversation_id") is None
     assert fake_db.store.get("appointments", []) == []
 
@@ -1335,7 +1335,7 @@ def test_an_invalid_duration_blocks_rather_than_losing_the_booking(
         "call_log_id"
     ]
 
-    assert _webhook(client, "conv_1").status_code == 204
+    assert _webhook(client, "conv_1").status_code == 200
 
     row = _call_row(fake_db, call_log_id)
     booking = next(s for s in row["execution_log"] if s["node_type"] == "schedule_appointment")
