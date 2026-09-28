@@ -20,7 +20,10 @@ from app.core.config import Settings
 from app.db.tenancy import TenantScope
 from app.engine.graph import Graph
 from app.engine.steps import ExecutionLog
-from app.integrations.elevenlabs.webhook import CallResult
+from app.integrations.elevenlabs.webhook import (
+    WHATSAPP_PERMISSION_REQUESTED,
+    CallResult,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -214,11 +217,15 @@ class RunContext:
         # free text and an older row may simply not have one, and treating that
         # as "not taking it" is the direction that gets a contraindication
         # missed.
+        #
+        # `discontinued` is the schema's own word for stopped. `on_hold` stays
+        # active for the same reason as a missing status: the patient may
+        # resume it, and a contraindication check should still see it.
         return [
             row
             for row in rows
             if str(row.get("status") or "active").strip().lower()
-            not in {"stopped", "completed", "cancelled", "inactive"}
+            not in {"discontinued", "stopped", "completed", "cancelled", "inactive"}
         ]
 
     # -- call history -------------------------------------------------------
@@ -242,7 +249,12 @@ class RunContext:
         ):
             if str(row.get("id")) == str(self.call_log_id):
                 continue
-            if not row.get("conversation_id"):
+            # A WhatsApp permission request has no conversation yet, but the
+            # patient has been contacted and the call may still happen.
+            if (
+                not row.get("conversation_id")
+                and row.get("outcome") != WHATSAPP_PERMISSION_REQUESTED
+            ):
                 continue
             created = _parse_timestamp(row.get("created_at"))
             if created is None or created >= cutoff:

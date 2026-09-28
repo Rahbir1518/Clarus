@@ -620,9 +620,16 @@ function FlowContent() {
       const result = await executeWorkflow(savedWorkflowId, selectedPatientId);
       setRunResult(result);
       setRunStatus(result.status === 'failed' || result.status === 'blocked' ? 'error' : 'success');
-    } catch {
+    } catch (err) {
       setRunStatus('error');
-      setRunResult({ execution_log: [], status: 'failed', call_log_id: null });
+      // Shown as a step so the reason (an invalid graph, an archived workflow)
+      // is visible in the run panel rather than a bare "Failed".
+      const message = err instanceof Error ? err.message : String(err);
+      setRunResult({
+        execution_log: [{ status: 'failed', label: 'Run rejected', node_type: 'run', message }],
+        status: 'failed',
+        call_log_id: null,
+      });
     }
   }, [savedWorkflowId, selectedPatientId]);
 

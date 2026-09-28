@@ -12,9 +12,10 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Header, Response, status
 
 from app.api.deps import RawBodyDep, SupabaseDep
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.core.errors import NotFound
 from app.db.system import (
+    claim_call_log_for_conversation,
     get_workflow_by_id,
     tenant_scope_for_row,
     update_call_log_by_conversation,
@@ -26,6 +27,7 @@ from app.integrations.elevenlabs.webhook import (
     WebhookVerificationError,
     loads_raw,
     parse_post_call_payload,
+    verify_run_ref,
     verify_signature,
 )
 
@@ -96,15 +98,25 @@ def elevenlabs_post_call(
         "webhook_received_at": datetime.now(timezone.utc).isoformat(),
     }
 
+    review_reasons: list[str] = []
     try:
         row = update_call_log_by_conversation(client, result.conversation_id, updates)
     except NotFound:
-        # A conversation we have no record of. Worth investigating — it means a
-        # call was placed that we did not log — but not worth a retry.
-        logger.warning(
-            "No call log for ElevenLabs conversation %s", result.conversation_id
+        # Possibly a WhatsApp call that waited on the patient's permission, so
+        # was never bound. Its run reference names the call log.
+        row = _claim_deferred_call(client, result, updates, settings)
+        if row is None:
+            # A conversation we have no record of. Worth investigating — it
+            # means a call was placed that we did not log — but not worth a
+            # retry.
+            logger.warning(
+                "No call log for ElevenLabs conversation %s", result.conversation_id
+            )
+            return Response(status_code=status.HTTP_204_NO_CONTENT)
+        review_reasons.append(
+            "the call was placed when the patient granted WhatsApp permission, "
+            "at a time no calling-hours check covered"
         )
-        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     logger.info(
         "Recorded call outcome: conversation=%s outcome=%s confirmed=%s review=%s",
@@ -118,7 +130,7 @@ def elevenlabs_post_call(
     # here is what turns "the patient agreed to Tuesday at two thirty" into an
     # appointment; before this line existed, that agreement was recorded and
     # then nothing acted on it.
-    _resume_workflow(client, row, result)
+    _resume_workflow(client, row, result, review_reasons)
 
     # Nudge any open stream belonging to the tenant that owns this call. The id
     # comes from the stored row, never from the payload — the webhook is
@@ -133,7 +145,36 @@ def elevenlabs_post_call(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-def _resume_workflow(client: object, row: dict, result: CallResult) -> None:
+def _claim_deferred_call(
+    client: object, result: CallResult, updates: dict, settings: Settings
+) -> dict | None:
+    """Bind a deferred WhatsApp call to its call log, then record the outcome.
+
+    None when the payload carries no valid run reference or the row is not
+    waiting on permission. The reference is HMAC-checked before its id is
+    used, so a forged one is indistinguishable from an absent one.
+    """
+    call_log_id = verify_run_ref(result.run_ref, settings.elevenlabs_webhook_secret)
+    if call_log_id is None:
+        return None
+    try:
+        claim_call_log_for_conversation(client, call_log_id, result.conversation_id)
+        row = update_call_log_by_conversation(
+            client, result.conversation_id, {**updates, "needs_review": True}
+        )
+    except NotFound:
+        return None
+    logger.info(
+        "Bound deferred WhatsApp conversation %s to call log %s",
+        result.conversation_id,
+        call_log_id,
+    )
+    return row
+
+
+def _resume_workflow(
+    client: object, row: dict, result: CallResult, review_reasons: list[str]
+) -> None:
     """Continue the parked workflow run this call belonged to.
 
     Never raises. Two reasons, and they point the same way: the outcome is
@@ -155,7 +196,7 @@ def _resume_workflow(client: object, row: dict, result: CallResult) -> None:
         # The tenant comes from the stored row's doctor_id, never from the
         # payload. See app/db/system.py for the provenance argument.
         scope = tenant_scope_for_row(client, row)
-        run = resume_run(scope, row, result, workflow)
+        run = resume_run(scope, row, result, workflow, review_reasons=review_reasons)
     except ResumeSkipped as exc:
         logger.info("Not resuming call log %s: %s", call_log_id, exc)
     except NotFound:

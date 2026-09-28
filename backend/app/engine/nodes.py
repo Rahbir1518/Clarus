@@ -39,6 +39,11 @@ from app.engine.policy import PolicyRefusal
 from app.engine.steps import BLOCKED, FAILED, OK, PARKED, SKIPPED
 from app.integrations.elevenlabs.client import ElevenLabsClient, ElevenLabsError
 from app.integrations.elevenlabs.variables import build_dynamic_variables
+from app.integrations.elevenlabs.webhook import (
+    RUN_REF_VARIABLE,
+    WHATSAPP_PERMISSION_REQUESTED,
+    make_run_ref,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -371,6 +376,13 @@ def _call_patient(ctx: RunContext, node: Node) -> Outcome:
         doctor_name=ctx.doctor_display_name(),
         settings=ctx.settings,
     )
+    whatsapp = ctx.settings.call_transport_name == "whatsapp"
+    if whatsapp and ctx.settings.elevenlabs_webhook_secret:
+        # Lets the webhook find this run if the call is deferred behind a
+        # permission request. See run references in webhook.py.
+        variables[RUN_REF_VARIABLE] = make_run_ref(
+            str(ctx.call_log_id), ctx.settings.elevenlabs_webhook_secret
+        )
 
     # The run row already exists — runner.py creates it before the walk starts,
     # so a conversation can never exist without somewhere to record its
@@ -392,6 +404,26 @@ def _call_patient(ctx: RunContext, node: Node) -> Outcome:
         return failed(f"The call was not placed: {exc}")
 
     conversation_id = str(response.get("conversation_id") or "")
+    if not conversation_id and whatsapp and RUN_REF_VARIABLE in variables:
+        # The patient has not granted this business call permission yet.
+        # ElevenLabs has sent the permission template and will dial when they
+        # approve. The marker makes the row count as an attempt, so a re-run
+        # does not send the request again, and lets the webhook claim the row.
+        ctx.scope.update_owned(
+            "call_logs", ctx.call_log_id, {"outcome": WHATSAPP_PERMISSION_REQUESTED}
+        )
+        ctx.require_review(
+            "the call waits on the patient's WhatsApp permission and will be "
+            "placed whenever they approve, outside the calling-hours check"
+        )
+        ctx.call_placed = True
+        return Outcome(
+            PARKED,
+            f"Asked {phone} for WhatsApp call permission about {reason}. The call "
+            f"is placed when they approve, and the run resumes on its webhook.",
+            entity={"table": "call_logs", "id": str(ctx.call_log_id)},
+        )
+
     if not conversation_id:
         # The call may well be ringing. Without an id there is no way to match
         # its webhook, so this is a failure that needs a person.
@@ -477,7 +509,18 @@ def _schedule_appointment(ctx: RunContext, node: Node) -> Outcome:
             f"{result.confirmed_time!r} as a date and time."
         )
 
-    minutes = int(node.param("duration_minutes") or 30)
+    # Checked here rather than left to int(): on the resume path an exception
+    # would lose the booking with only a server log line to show for it.
+    raw_minutes = node.param("duration_minutes") or "30"
+    try:
+        minutes = int(raw_minutes)
+    except ValueError:
+        minutes = 0
+    if minutes <= 0:
+        raise _MissingParam(
+            f"Parameter duration_minutes={raw_minutes!r} is not a positive whole "
+            f"number of minutes."
+        )
     appointment = ctx.scope.insert_owned(
         "appointments",
         {

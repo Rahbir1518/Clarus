@@ -21,12 +21,18 @@ import time
 
 import pytest
 
+from app.api.routes import executions as executions_routes
 from app.core.config import get_settings
 from app.db.tenancy import TenantScope
 from app.engine import nodes as engine_nodes
 from app.engine import policy
 from app.engine.policy import PolicyRefusal
-from app.integrations.elevenlabs.webhook import sign_payload
+from app.integrations.elevenlabs.webhook import (
+    RUN_REF_VARIABLE,
+    WHATSAPP_PERMISSION_REQUESTED,
+    sign_payload,
+    verify_run_ref,
+)
 from tests.conftest import TEST_WEBHOOK_SECRET, FakeSupabase
 
 ALICE = "user_2alice"
@@ -156,7 +162,9 @@ def _call_row(db: FakeSupabase, call_log_id: str) -> dict:
     return next(r for r in db.store["call_logs"] if r["id"] == call_log_id)
 
 
-def _webhook(client, conversation_id: str, **collected):
+def _webhook(
+    client, conversation_id: str, *, dynamic_variables: dict | None = None, **collected
+):
     """Deliver a signed post-call webhook, the way ElevenLabs would."""
     values = {
         "patient_confirmed": True,
@@ -176,6 +184,9 @@ def _webhook(client, conversation_id: str, **collected):
                 "conversation_id": conversation_id,
                 "status": "done",
                 "transcript": [{"role": "user", "message": "হ্যাঁ, ঠিক আছে।"}],
+                "conversation_initiation_client_data": {
+                    "dynamic_variables": dynamic_variables or {}
+                },
                 "analysis": {
                     "data_collection_results": {
                         key: {"value": value} for key, value in values.items()
@@ -1197,6 +1208,143 @@ def test_a_webhook_for_a_call_nobody_placed_is_acknowledged(client, fake_db):
 
 
 # ---------------------------------------------------------------------------
+# WhatsApp calls deferred behind a permission request
+# ---------------------------------------------------------------------------
+
+
+class _PendingWhatsApp(_StubElevenLabs):
+    """ElevenLabs' answer when the patient has not granted call permission:
+    queued, permission template sent, no conversation yet."""
+
+    def place_call(self, *, to_number: str, dynamic_variables: dict, **_kw) -> dict:
+        super().place_call(to_number=to_number, dynamic_variables=dynamic_variables)
+        return {"success": True, "conversation_id": None}
+
+
+@pytest.fixture
+def pending_whatsapp(
+    monkeypatch: pytest.MonkeyPatch, fake_db: FakeSupabase, calling_allowed
+) -> list[dict]:
+    monkeypatch.setenv("CALL_TRANSPORT", "whatsapp")
+    get_settings.cache_clear()
+    recorder: list[dict] = []
+    monkeypatch.setattr(
+        engine_nodes, "ElevenLabsClient", _PendingWhatsApp(recorder, fake_db)
+    )
+    return recorder
+
+
+def test_a_pending_whatsapp_permission_parks_the_run_for_review(
+    client, fake_db, auth_header, pending_whatsapp
+):
+    patient = _patient(fake_db)
+    workflow = _workflow(fake_db, *_call_graph())
+
+    started = _run(client, auth_header, workflow["id"], patient["id"])
+    call_log_id = started.json()["call_log_id"]
+
+    assert started.json()["status"] == "parked"
+    row = _call_row(fake_db, call_log_id)
+    assert row["outcome"] == WHATSAPP_PERMISSION_REQUESTED
+    assert row["needs_review"] is True
+    ref = pending_whatsapp[0]["dynamic_variables"][RUN_REF_VARIABLE]
+    assert verify_run_ref(ref, TEST_WEBHOOK_SECRET) == call_log_id
+
+
+def test_the_deferred_call_webhook_finds_its_run_and_resumes_it(
+    client, fake_db, auth_header, pending_whatsapp
+):
+    patient = _patient(fake_db)
+    workflow = _workflow(fake_db, *_call_graph())
+    call_log_id = _run(client, auth_header, workflow["id"], patient["id"]).json()[
+        "call_log_id"
+    ]
+    ref = pending_whatsapp[0]["dynamic_variables"][RUN_REF_VARIABLE]
+
+    # Hours later the patient approves, ElevenLabs dials, and the webhook names
+    # a conversation no call log was bound to.
+    response = _webhook(
+        client, "conv_later", dynamic_variables={RUN_REF_VARIABLE: ref}
+    )
+
+    assert response.status_code == 204
+    row = _call_row(fake_db, call_log_id)
+    assert row["conversation_id"] == "conv_later"
+    assert row["outcome"] == "confirmed"
+    assert "schedule_appointment" in [s["node_type"] for s in row["execution_log"]]
+    assert fake_db.store["appointments"][0]["call_log_id"] == call_log_id
+    # Booked, but at a time no calling-hours check covered: a person looks.
+    assert row["needs_review"] is True
+
+
+def test_a_forged_run_reference_claims_nothing(
+    client, fake_db, auth_header, pending_whatsapp
+):
+    patient = _patient(fake_db)
+    workflow = _workflow(fake_db, *_call_graph())
+    call_log_id = _run(client, auth_header, workflow["id"], patient["id"]).json()[
+        "call_log_id"
+    ]
+
+    response = _webhook(
+        client,
+        "conv_attacker",
+        dynamic_variables={RUN_REF_VARIABLE: f"{call_log_id}.{'0' * 64}"},
+    )
+
+    assert response.status_code == 204
+    assert _call_row(fake_db, call_log_id).get("conversation_id") is None
+    assert fake_db.store.get("appointments", []) == []
+
+
+def test_a_permission_request_counts_as_an_attempt(
+    client, fake_db, auth_header, pending_whatsapp, monkeypatch
+):
+    """Otherwise every re-run sends the patient another permission request."""
+    monkeypatch.setenv("MAX_CALL_ATTEMPTS_PER_PATIENT", "1")
+    get_settings.cache_clear()
+    patient = _patient(fake_db)
+    workflow = _workflow(fake_db, *_call_graph())
+
+    _run(client, auth_header, workflow["id"], patient["id"])
+    second = _run(client, auth_header, workflow["id"], patient["id"])
+
+    assert second.json()["status"] == "blocked"
+    assert len(pending_whatsapp) == 1
+
+
+def test_a_twilio_call_carries_no_run_reference(
+    client, fake_db, auth_header, placed_calls, calling_allowed
+):
+    patient = _patient(fake_db)
+    workflow = _workflow(fake_db, *_call_graph())
+
+    _run(client, auth_header, workflow["id"], patient["id"])
+
+    assert RUN_REF_VARIABLE not in placed_calls[0]["dynamic_variables"]
+
+
+def test_an_invalid_duration_blocks_rather_than_losing_the_booking(
+    client, fake_db, auth_header, placed_calls, calling_allowed
+):
+    patient = _patient(fake_db)
+    nodes, edges = _call_graph()
+    nodes[2] = _node("a1", "schedule_appointment", duration_minutes="half an hour")
+    workflow = _workflow(fake_db, nodes, edges)
+    call_log_id = _run(client, auth_header, workflow["id"], patient["id"]).json()[
+        "call_log_id"
+    ]
+
+    assert _webhook(client, "conv_1").status_code == 204
+
+    row = _call_row(fake_db, call_log_id)
+    booking = next(s for s in row["execution_log"] if s["node_type"] == "schedule_appointment")
+    assert booking["status"] == "blocked"
+    assert "duration_minutes" in booking["message"]
+    assert row["needs_review"] is True
+
+
+# ---------------------------------------------------------------------------
 # POST /api/lab-event
 # ---------------------------------------------------------------------------
 
@@ -1465,3 +1613,55 @@ def test_every_catalogued_node_type_has_a_handler():
     from app.engine.catalogue import ALL_NODE_TYPES
 
     assert set(engine_nodes.HANDLERS) == set(ALL_NODE_TYPES)
+
+
+@pytest.mark.parametrize(
+    ("status", "taking"), [("active", True), ("on_hold", True), ("discontinued", False)]
+)
+def test_a_medication_check_reads_the_schemas_statuses(
+    client, fake_db, auth_header, status, taking
+):
+    """`discontinued` is the schema's word for stopped. It used to count as
+    active because the filter only knew other spellings."""
+    patient = _patient(fake_db)
+    TenantScope(fake_db, ALICE).insert_for_patient(
+        "patient_medications", patient["id"], {"name": "Metformin", "status": status}
+    )
+    workflow = _workflow(
+        fake_db,
+        [
+            _node("t1", "lab_results_received"),
+            _node("m1", "check_medication_list", medication="metformin"),
+            _node("e1", "log_completion"),
+        ],
+        [_edge("t1", "m1"), _edge("m1", "e1", "true")],
+    )
+
+    response = _run(client, auth_header, workflow["id"], patient["id"])
+
+    assert _step_for(response, "check_medication_list")["branch"] == (
+        "true" if taking else "false"
+    )
+
+
+def test_starting_a_run_tells_open_streams(client, fake_db, auth_header, monkeypatch):
+    """The Calls page learns of a new run when it starts, not only once a
+    webhook completes it."""
+    published: list[tuple[str, str, str]] = []
+    monkeypatch.setattr(
+        executions_routes.broker,
+        "publish",
+        lambda doctor_id, event: published.append((doctor_id, event.name, event.entity_id)),
+    )
+    patient = _patient(fake_db)
+    workflow = _workflow(
+        fake_db,
+        [_node("t1", "lab_results_received"), _node("e1", "log_completion")],
+        [_edge("t1", "e1")],
+    )
+
+    call_log_id = _run(client, auth_header, workflow["id"], patient["id"]).json()[
+        "call_log_id"
+    ]
+
+    assert published == [(ALICE, "call_log.updated", call_log_id)]

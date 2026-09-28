@@ -97,6 +97,52 @@ def sign_payload(raw_body: bytes, secret: str, timestamp: int) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Run references
+#
+# A WhatsApp call to a patient who has not yet granted call permission is
+# queued with no conversation_id: ElevenLabs sends the permission template and
+# dials only when the patient approves, possibly hours later. Its webhook then
+# names a conversation no call log was ever bound to, and would be dropped.
+#
+# So the call carries this reference as a dynamic variable, and the webhook
+# payload echoes it back. It is `<call_log_id>.<hmac>`, keyed on the webhook
+# secret, so a browser — which chooses the dynamic variables of a web call —
+# cannot forge one naming another tenant's call log. Derived rather than
+# stored, so there is nothing new in the database to keep secret.
+# ---------------------------------------------------------------------------
+
+RUN_REF_VARIABLE = "clarus_run_ref"
+
+# call_logs.outcome while a WhatsApp call waits on the patient's permission.
+# Overwritten by the real outcome when the webhook arrives. Only a row carrying
+# it can be claimed by a run reference.
+WHATSAPP_PERMISSION_REQUESTED = "whatsapp_permission_requested"
+
+
+def _run_ref_digest(call_log_id: str, secret: str) -> str:
+    message = f"clarus-run-ref:{call_log_id}".encode()
+    return hmac.new(secret.encode(), message, hashlib.sha256).hexdigest()
+
+
+def make_run_ref(call_log_id: str, secret: str) -> str:
+    if not secret:
+        raise ValueError("A run reference needs the webhook secret")
+    return f"{call_log_id}.{_run_ref_digest(call_log_id, secret)}"
+
+
+def verify_run_ref(ref: str | None, secret: str) -> str | None:
+    """The call log id a genuine reference names, or None."""
+    if not ref or not secret:
+        return None
+    call_log_id, _, digest = ref.rpartition(".")
+    if not call_log_id or not digest:
+        return None
+    if not hmac.compare_digest(_run_ref_digest(call_log_id, secret), digest):
+        return None
+    return call_log_id
+
+
+# ---------------------------------------------------------------------------
 # Payload parsing
 # ---------------------------------------------------------------------------
 
@@ -138,6 +184,9 @@ class CallResult:
     reached_patient: bool | None = None
     transcript: str | None = None
     raw_data_collection: dict[str, Any] = field(default_factory=dict)
+    # Echoed from the dynamic variables we sent. Unverified here; see
+    # verify_run_ref.
+    run_ref: str | None = None
 
     @property
     def needs_human_review(self) -> bool:
@@ -202,6 +251,10 @@ def parse_post_call_payload(payload: dict) -> CallResult:
 
     values = {key: _extract_value(item) for key, item in collected.items()}
 
+    initiation = data.get("conversation_initiation_client_data") or {}
+    dynamic = initiation.get("dynamic_variables") if isinstance(initiation, dict) else None
+    run_ref = dynamic.get(RUN_REF_VARIABLE) if isinstance(dynamic, dict) else None
+
     return CallResult(
         conversation_id=data.get("conversation_id", ""),
         status=data.get("status"),
@@ -214,6 +267,7 @@ def parse_post_call_payload(payload: dict) -> CallResult:
         reached_patient=_as_bool(values.get("reached_patient")),
         transcript=_flatten_transcript(data.get("transcript")),
         raw_data_collection=collected,
+        run_ref=run_ref if isinstance(run_ref, str) else None,
     )
 
 

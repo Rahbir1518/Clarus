@@ -26,8 +26,10 @@ import logging
 from fastapi import APIRouter, HTTPException, status
 
 from app.api.deps import TenantDep
+from app.db.tenancy import TenantScope
 from app.engine.graph import GraphError, parse_graph
 from app.engine.runner import RunResult, execute_workflow
+from app.events.broker import Event, broker
 from app.schemas.execution import (
     ExecuteWorkflow,
     LabEvent,
@@ -43,6 +45,12 @@ lab_event_router = APIRouter(tags=["workflows"])
 
 # A workflow in this state is not run by either path.
 _RETIRED = "ARCHIVED"
+
+
+def _announce(scope: TenantScope, result: RunResult) -> None:
+    """A new run is a new call_logs row. Tell an open Calls page now, rather
+    than only once a webhook completes it."""
+    broker.publish(scope.doctor_id, Event("call_log.updated", result.call_log_id))
 
 
 def _as_run_read(result: RunResult, workflow_id: str) -> RunRead:
@@ -93,6 +101,7 @@ def run_workflow(
             status_code=422, detail=f"This workflow cannot be run: {exc}"
         ) from exc
 
+    _announce(scope, result)
     return _as_run_read(result, workflow_id)
 
 
@@ -157,6 +166,7 @@ def lab_event(payload: LabEvent, scope: TenantDep) -> LabEventResult:
             )
             continue
 
+        _announce(scope, result)
         runs.append(_as_run_read(result, workflow_id))
 
     logger.info(

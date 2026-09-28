@@ -4,6 +4,7 @@
     python scripts/sync_agent.py --dry-run
     python scripts/sync_agent.py
     python scripts/sync_agent.py --agent-id agent_abc123
+    python scripts/sync_agent.py --create     # new agent even if one is configured
     python scripts/sync_agent.py --spec agents/appointment_confirmation.yaml
 
 The YAML file is the source of truth. Editing the agent in the ElevenLabs
@@ -26,12 +27,20 @@ import yaml
 # Allow running as `python scripts/sync_agent.py` from the backend directory.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from app.core.config import get_settings  # noqa: E402
 from app.integrations.elevenlabs.client import (  # noqa: E402
     ElevenLabsClient,
     ElevenLabsError,
 )
 
 DEFAULT_SPEC = Path(__file__).resolve().parent.parent / "agents" / "appointment_confirmation.yaml"
+
+
+def _configured_agent_id() -> str:
+    try:
+        return get_settings().elevenlabs_agent_id
+    except Exception:  # noqa: BLE001 - a half-filled .env should not stop --dry-run
+        return ""
 
 
 def load_spec(path: Path) -> dict:
@@ -71,12 +80,27 @@ def collected_fields(agent: dict) -> set[str]:
 
 
 def main() -> int:
+    # Bangla on a Windows console: the default cp1252 encoding raises on the
+    # first character it cannot represent.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--spec", type=Path, default=DEFAULT_SPEC)
     parser.add_argument(
         "--agent-id",
-        default=os.environ.get("ELEVENLABS_AGENT_ID", ""),
-        help="Update this agent instead of creating a new one.",
+        # From the settings, not os.environ: backend/.env is read by
+        # pydantic-settings and never reaches the process environment, so
+        # os.environ alone missed it and every run created a new agent.
+        default=os.environ.get("ELEVENLABS_AGENT_ID") or _configured_agent_id(),
+        help="Update this agent instead of creating a new one. Defaults to "
+        "ELEVENLABS_AGENT_ID.",
+    )
+    parser.add_argument(
+        "--create",
+        action="store_true",
+        help="Create a new agent even though ELEVENLABS_AGENT_ID is set.",
     )
     parser.add_argument(
         "--dry-run",
@@ -84,6 +108,8 @@ def main() -> int:
         help="Print the payload that would be sent and exit.",
     )
     args = parser.parse_args()
+    if args.create:
+        args.agent_id = ""
 
     spec = load_spec(args.spec)
     wanted = declared_fields(spec)

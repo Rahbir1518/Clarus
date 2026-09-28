@@ -11,9 +11,6 @@
 #
 #   python scripts/sync_agent.py --spec agents/appointment_confirmation_bn.yaml --dry-run
 #   python scripts/sync_agent.py --spec agents/appointment_confirmation_bn.yaml
-#
-# On Windows, set PYTHONIOENCODING=utf-8 first or the dry-run crashes trying
-# to print Bangla to a cp1252 console.
 # ===========================================================================
 
 name: Clarus — Appointment Confirmation (বাংলা)

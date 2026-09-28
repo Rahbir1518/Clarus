@@ -308,6 +308,11 @@ export async function executeWorkflow(
       metadata: metadata ?? {},
     }),
   });
+  if (!response.ok) {
+    // An error body has no `status`, and read as a run it looked like success.
+    const body = await response.json().catch(() => null);
+    throw new Error(body?.error?.message ?? `Run failed (${response.status})`);
+  }
   return response.json();
 }
 

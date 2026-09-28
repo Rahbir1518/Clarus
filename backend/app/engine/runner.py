@@ -373,7 +373,12 @@ class ResumeSkipped(Exception):
 
 
 def resume_run(
-    scope: TenantScope, call_log: dict, result: CallResult, workflow: dict
+    scope: TenantScope,
+    call_log: dict,
+    result: CallResult,
+    workflow: dict,
+    *,
+    review_reasons: list[str] | None = None,
 ) -> RunResult:
     """Continue a parked run from the node that parked it.
 
@@ -443,6 +448,9 @@ def resume_run(
         # The call this run parked on has been placed. Without this a second
         # call_patient node downstream would look like the first.
         call_placed=True,
+        # What the webhook learned about the call that the graph cannot, such
+        # as a deferred WhatsApp call placed outside the calling-hours check.
+        review_reasons=list(review_reasons or []),
     )
 
     log.record(

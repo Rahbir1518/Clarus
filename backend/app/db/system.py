@@ -27,6 +27,7 @@ from typing import Any
 
 from app.core.errors import NotFound
 from app.db.tenancy import TenantScope
+from app.integrations.elevenlabs.webhook import WHATSAPP_PERMISSION_REQUESTED
 
 
 def _rows(response: Any) -> list[dict]:
@@ -82,6 +83,33 @@ def update_call_log_by_conversation(
     if not rows:
         raise NotFound("Call log")
     return rows[0]
+
+
+def claim_call_log_for_conversation(
+    client: Any, call_log_id: str, conversation_id: str
+) -> None:
+    """Bind a conversation to a call log waiting on WhatsApp permission.
+
+    `call_log_id` must come from a verified run reference (see
+    app.integrations.elevenlabs.webhook.verify_run_ref), never from a payload
+    field taken at face value: the reference's HMAC is the capability here, the
+    way conversation_id is everywhere else in this module.
+
+    Only a row still unbound and still marked as waiting on permission can be
+    claimed, and the write is filtered on both, so a row can be claimed once.
+    """
+    if not call_log_id or not conversation_id:
+        raise NotFound("Call log")
+    rows = _rows(
+        client.table("call_logs")
+        .update({"conversation_id": conversation_id})
+        .eq("id", call_log_id)
+        .eq("outcome", WHATSAPP_PERMISSION_REQUESTED)
+        .is_("conversation_id", "null")
+        .execute()
+    )
+    if not rows:
+        raise NotFound("Call log")
 
 
 def get_workflow_by_id(client: Any, workflow_id: str) -> dict:

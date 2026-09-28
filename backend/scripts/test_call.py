@@ -29,7 +29,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.core.config import MissingConfiguration, get_settings  # noqa: E402
-from app.engine.policy import normalise_phone  # noqa: E402
+from app.engine.policy import ALLOWED_CALL_REASONS, normalise_phone  # noqa: E402
 from app.integrations.elevenlabs.client import (  # noqa: E402
     TRANSPORTS,
     ElevenLabsClient,
@@ -48,14 +48,23 @@ def build_dynamic_variables(args: argparse.Namespace) -> dict:
         "patient_name": args.patient_name,
         "doctor_name": args.doctor_name,
         "practice_name": args.practice_name,
-        "appointment_reason": args.reason,
-        "callback_number": args.callback_number,
+        # The same fixed vocabulary the engine speaks from, in Bangla, so a
+        # test call sounds like a real one.
+        "appointment_reason": ALLOWED_CALL_REASONS[args.reason_code],
+        "callback_number": args.callback_number
+        or get_settings().practice_callback_number,
         "timezone": args.timezone,
         "today_date": date.today().isoformat(),
     }
 
 
 def main() -> int:
+    # Bangla on a Windows console: the default cp1252 encoding raises on the
+    # first character it cannot represent.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--to",
@@ -69,8 +78,12 @@ def main() -> int:
     parser.add_argument("--patient-name", default="Alex Kim")
     parser.add_argument("--doctor-name", default="Dr. Morgan Reyes")
     parser.add_argument("--practice-name", default="Clarus Family Health")
-    parser.add_argument("--reason", default="your annual check-up")
-    parser.add_argument("--callback-number", default="+15550000000")
+    parser.add_argument(
+        "--reason-code", choices=sorted(ALLOWED_CALL_REASONS), default="annual_check_up"
+    )
+    parser.add_argument(
+        "--callback-number", help="Defaults to PRACTICE_CALLBACK_NUMBER."
+    )
     parser.add_argument("--timezone", default="Asia/Dhaka")
     parser.add_argument("--agent-id", default=None)
     parser.add_argument("--phone-number-id", default=None)

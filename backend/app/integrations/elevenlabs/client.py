@@ -172,8 +172,10 @@ class ElevenLabsClient:
         is placed now; if not, it sends the permission-request template and
         dials **when the patient approves** — which may be hours later, and so
         outside the calling-hours window the workflow checked. For the pilot,
-        have the patient grant permission first. `conversation_id` may be null
-        in that case, which the call_patient node treats as needing review.
+        have the patient grant permission first. `conversation_id` is null in
+        that case; the call_patient node parks the run and flags it for review,
+        and the webhook finds it again through its run reference (see
+        webhook.py).
         """
         settings = get_settings()
         if agent_id is None:
