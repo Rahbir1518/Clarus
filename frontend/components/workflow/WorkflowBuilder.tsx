@@ -4,7 +4,7 @@ import '@xyflow/react/dist/style.css';
 
 import { useState, useCallback, useRef, useEffect, type DragEvent } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { useAuth0 } from '@auth0/auth0-react';
+import { useUser } from '@clerk/nextjs';
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -151,7 +151,7 @@ const EXAMPLE_EDGES: Edge[] = [
 
 function FlowContent() {
   const { screenToFlowPosition, fitView } = useReactFlow();
-  const { user } = useAuth0();
+  const { user } = useUser();
   const searchParams = useSearchParams();
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
@@ -500,7 +500,16 @@ function FlowContent() {
     setWorkflowName(name);
     setWorkflowDescription(description);
 
-    const doctorId = user?.sub ?? 'anonymous';
+    // No fallback string. The old `?? 'anonymous'` wrote records under an
+    // owner that does not exist, permanently orphaning them; the backend now
+    // takes the tenant from the token and ignores this field entirely, and the
+    // doctors foreign key would reject the fake id anyway.
+    const doctorId = user?.id;
+    if (!doctorId) {
+      setSaveStatus('error');
+      setTimeout(() => setSaveStatus('idle'), 3000);
+      return;
+    }
 
     try {
       if (savedWorkflowId) {
@@ -571,8 +580,7 @@ function FlowContent() {
     setNewPatientPhone('');
     setLoadingPatients(true);
     try {
-      const doctorId = user?.sub ?? undefined;
-      const data = await listPatients(doctorId);
+      const data = await listPatients(user?.id);
       setPatients(Array.isArray(data) ? data : []);
     } catch {
       setPatients([]);
@@ -585,11 +593,12 @@ function FlowContent() {
     if (!newPatientName.trim() || !newPatientPhone.trim()) return;
     setAddingPatient(true);
     try {
-      const doctorId = user?.sub ?? 'anonymous';
       const created = await createPatient({
         name: newPatientName.trim(),
         phone: newPatientPhone.trim(),
-        doctor_id: doctorId,
+        // Ignored by the backend, which uses the token subject. Sent only
+        // because the request type still declares it.
+        doctor_id: user?.id ?? '',
       });
       setPatients((prev) => [created, ...prev]);
       setSelectedPatientId(created.id);
@@ -610,10 +619,17 @@ function FlowContent() {
     try {
       const result = await executeWorkflow(savedWorkflowId, selectedPatientId);
       setRunResult(result);
-      setRunStatus(result.status === 'failed' ? 'error' : 'success');
-    } catch {
+      setRunStatus(result.status === 'failed' || result.status === 'blocked' ? 'error' : 'success');
+    } catch (err) {
       setRunStatus('error');
-      setRunResult({ execution_log: [], status: 'failed', call_log_id: null });
+      // Shown as a step so the reason (an invalid graph, an archived workflow)
+      // is visible in the run panel rather than a bare "Failed".
+      const message = err instanceof Error ? err.message : String(err);
+      setRunResult({
+        execution_log: [{ status: 'failed', label: 'Run rejected', node_type: 'run', message }],
+        status: 'failed',
+        call_log_id: null,
+      });
     }
   }, [savedWorkflowId, selectedPatientId]);
 
@@ -624,10 +640,25 @@ function FlowContent() {
     catch { return iso; }
   };
 
+  // The five step statuses the engine records. See backend/app/engine/steps.py —
+  // blocked and failed are deliberately distinct there, so they are not collapsed
+  // to one colour here: blocked is a question for whoever drew the workflow,
+  // failed is a question for the backend.
   const stepColor = (s: string) => {
     if (s === 'ok') return '#10b981';
-    if (s === 'error') return '#ef4444';
+    if (s === 'failed') return '#ef4444';
+    if (s === 'blocked') return '#f97316';
+    if (s === 'parked') return '#f59e0b';
     return '#6b7280';
+  };
+
+  // A parked run placed a call and is waiting for the post-call webhook, which is
+  // a success. Blocked means a safety rule refused something, which is not.
+  const RUN_LABELS: Record<string, string> = {
+    completed: '✓ Completed',
+    parked: '⏳ Call placed — waiting for the outcome',
+    blocked: '⛔ Stopped by a safety rule',
+    failed: '✕ Failed',
   };
 
   // ────────────────────────────────────────────────────────────────────────
@@ -1041,7 +1072,7 @@ function FlowContent() {
                   runStatus === 'success' ? 'bg-success/10 border border-success/30' : 'bg-destructive/10 border border-destructive/30'
                 }`}>
                   <span className="text-sm font-semibold">
-                    {runStatus === 'success' ? '✓ Completed' : '✕ Failed'}
+                    {RUN_LABELS[runResult.status] ?? (runStatus === 'success' ? '✓ Completed' : '✕ Failed')}
                   </span>
                   {runResult.call_log_id && (
                     <span className="text-[10px] text-muted-foreground ml-auto">

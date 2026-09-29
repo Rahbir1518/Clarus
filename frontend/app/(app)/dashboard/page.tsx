@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useAuth0 } from "@auth0/auth0-react";
+import { useUser } from "@clerk/nextjs";
 import {
   listPatients,
   createPatient,
@@ -60,8 +60,8 @@ export default function DashboardPage() {
   const [uploadingPdf, setUploadingPdf] = useState(false);
 
   const router = useRouter();
-  const { user } = useAuth0();
-  const doctorId = user?.sub;
+  const { user } = useUser();
+  const doctorId = user?.id;
 
   const fetchPatients = useCallback(async () => {
     if (!doctorId) return;

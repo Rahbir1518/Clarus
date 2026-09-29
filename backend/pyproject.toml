@@ -1,0 +1,46 @@
+[project]
+name = "clarus-backend"
+version = "0.1.0"
+description = "Clarus — medical workflow automation API"
+requires-python = ">=3.12"
+
+# Direct dependencies only. The previous backend shipped a full `pip freeze`
+# with 70+ transitive pins; resolve transitives at install time instead.
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "supabase>=2.10",
+    "pyjwt[crypto]>=2.10",
+    "httpx>=0.28",
+    # Reads agents/*.yaml — the agent definitions kept under version control.
+    "pyyaml>=6.0",
+    # zoneinfo needs a tz database, and Windows ships none — without this the
+    # calling-hours gate cannot resolve Asia/Dhaka and fails closed, so no call
+    # is ever placed from a Windows development machine. Pinned as a real
+    # dependency rather than left to the OS so every platform behaves the same.
+    "tzdata>=2024.1",
+    # PDF intake. Pure Python with no network code, chosen over pdfplumber for
+    # exactly that: app/ingest must never be able to send a document anywhere.
+    "pypdf>=5.0",
+    # FastAPI needs it to accept multipart uploads at all.
+    "python-multipart>=0.0.18",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+filterwarnings = ["error::DeprecationWarning"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]

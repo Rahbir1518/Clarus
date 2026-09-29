@@ -1,0 +1,161 @@
+# ===========================================================================
+# Clarus — appointment confirmation agent
+#
+# THIS FILE IS THE SOURCE OF TRUTH FOR THE AGENT. The ElevenLabs dashboard is a
+# rendering of it, not the other way round.
+#
+# The previous incarnation of this project stored the prompt, the data
+# collection schema and the phone binding only in the ElevenLabs dashboard.
+# Nothing was in version control, so losing account access meant the agent had
+# to be reverse-engineered from the six field names the backend happened to
+# read. Edit this file and run `python scripts/sync_agent.py` instead of
+# clicking in the dashboard, and that failure mode goes away.
+#
+#   python scripts/sync_agent.py --dry-run   # show what would change
+#   python scripts/sync_agent.py             # create or update
+# ===========================================================================
+
+name: Clarus — Appointment Confirmation
+
+tags:
+  - clarus
+  - appointment-confirmation
+
+conversation_config:
+  # A confirmation call that has not finished in four minutes has gone wrong.
+  max_duration_seconds: 240
+
+  agent:
+    language: en
+    first_message: >-
+      Hello, this is an automated call from {{practice_name}} on behalf of
+      {{doctor_name}}. Am I speaking with {{patient_name}}?
+
+    prompt:
+      llm: gemini-2.5-flash
+      prompt: |
+        # Role
+
+        You are a scheduling assistant calling on behalf of {{doctor_name}} at
+        {{practice_name}}. Your only job is to confirm or reschedule an
+        appointment for {{patient_name}}, regarding {{appointment_reason}}.
+
+        Today's date is {{today_date}} and the patient is in the
+        {{timezone}} timezone. Resolve every relative date ("next Tuesday",
+        "tomorrow") against today's date before confirming it.
+
+        # Identity check — do this first
+
+        Confirm you are speaking to {{patient_name}} before saying anything
+        else about the appointment.
+
+        - If someone else answers, ask whether {{patient_name}} is available.
+          Do not discuss the reason for the call with anyone else. Say only
+          that you are calling from {{practice_name}} and will call back.
+        - If you reach voicemail, leave a short message asking {{patient_name}}
+          to call {{practice_name}} back on {{callback_number}}. Do not state
+          the appointment reason in a voicemail.
+
+        # The conversation
+
+        Once identity is confirmed, ask the patient to confirm the appointment.
+        Keep it brief and natural. This is a phone call, so use short spoken
+        sentences and no formatting, lists or symbols.
+
+        If the patient agrees, confirm the specific date and time back to them
+        and end the call politely.
+
+        If the patient wants a different time, capture their preference in
+        their own words. You are NOT authorised to promise a new slot — say the
+        practice will call back to confirm availability.
+
+        # Stating times without ambiguity — this matters
+
+        Always say times in a form that cannot be misread. Say "two thirty in
+        the afternoon", never a bare "two thirty".
+
+        Before ending, read the agreed time back and get an explicit yes:
+        "So that's Tuesday the fourth of March, at two thirty in the
+        afternoon — is that right?"
+
+        If the patient gives an hour without saying morning or afternoon, ASK.
+        Never guess. A guessed AM/PM is a patient who misses their appointment.
+
+        # Boundaries
+
+        - Give no medical advice, no test results, and no clinical opinion of
+          any kind. If asked, say the practice will discuss it at the
+          appointment.
+        - Discuss no medication, diagnosis or history, even if asked directly.
+        - If the patient sounds distressed or describes a medical emergency,
+          tell them to hang up and call emergency services, then end the call.
+        - If the patient asks to stop being called, acknowledge it plainly and
+          end the call.
+        - Never state or imply that you are a human being. If asked, say you
+          are an automated assistant.
+
+# ---------------------------------------------------------------------------
+# Data collection
+#
+# These are the structured fields extracted after the call. The old system
+# nominally collected six fields but did not trust them, so it fell back to
+# regex-scraping the transcript for the word "yes" — which matched the agent's
+# own lines and booked appointments patients had not agreed to.
+#
+# The fix is to make these fields unambiguous enough to actually rely on. Any
+# field the agent cannot fill must come back null so the workflow can route it
+# to a human, rather than being guessed at downstream.
+# ---------------------------------------------------------------------------
+platform_settings:
+  data_collection:
+    patient_confirmed:
+      type: boolean
+      description: >-
+        True ONLY if the patient explicitly agreed to attend the appointment at
+        a specific date and time, and confirmed it when it was read back to
+        them. False if they declined, asked to reschedule, or did not commit.
+        Null if the call did not reach the patient at all (voicemail, wrong
+        number, someone else answered). Do not infer agreement from politeness
+        or from the word "yes" said in passing — it must be agreement to the
+        appointment itself.
+
+    confirmed_date:
+      type: string
+      description: >-
+        The agreed appointment date as YYYY-MM-DD. Resolve relative references
+        against today's date, which was given in the prompt. Null unless
+        patient_confirmed is true.
+
+    confirmed_time:
+      type: string
+      description: >-
+        The agreed appointment start time in 24-hour HH:MM form, e.g. "14:30"
+        for half past two in the afternoon. If the patient never made the
+        morning/afternoon distinction explicit, return null rather than
+        guessing. Null unless patient_confirmed is true.
+
+    call_outcome:
+      type: string
+      description: >-
+        Exactly one of: confirmed, reschedule_requested, declined, voicemail,
+        wrong_number, no_answer, patient_unavailable, opted_out, emergency.
+        Use "emergency" if the patient described a medical emergency.
+
+    patient_availability_notes:
+      type: string
+      description: >-
+        If the patient asked to reschedule, their stated availability in their
+        own words, e.g. "mornings only, not Fridays". Null otherwise. Do not
+        paraphrase into a specific slot — a human reads this.
+
+    callback_requested:
+      type: boolean
+      description: >-
+        True if the patient asked to be called back by a member of staff, or
+        asked a question this agent was not permitted to answer.
+
+    reached_patient:
+      type: boolean
+      description: >-
+        True only if the identity check confirmed the person on the call was
+        the patient. False for voicemail, wrong numbers, or another person.

@@ -14,8 +14,36 @@
   <img src="https://img.shields.io/badge/ElevenLabs-ConvAI-000?logo=elevenlabs" alt="ElevenLabs" />
   <img src="https://img.shields.io/badge/Twilio-Voice%2FSMS-F22F46?logo=twilio" alt="Twilio" />
   <img src="https://img.shields.io/badge/Google-Calendar-4285F4?logo=google" alt="Google Calendar" />
-  <img src="https://img.shields.io/badge/Auth0-Auth-EA5425?logo=auth0" alt="Auth0" />
+  <img src="https://img.shields.io/badge/Clerk-Auth-6C47FF?logo=clerk" alt="Clerk" />
 </p>
+
+---
+
+> ### ⚠️ Status: backend rebuild in progress (as of 2026-07-25)
+>
+> The backend was deleted and is being rebuilt from scratch. See
+> [docs/audit.md](docs/audit.md) for why, and [backend/README.md](backend/README.md) for
+> what exists today.
+>
+> **Sections below marked _(pre-rebuild)_ describe the old backend and are kept
+> as a record of intended behaviour, not as a description of current code.**
+> The frontend sections are current.
+>
+> What is real right now: the schema and Row Level Security in
+> [backend/migrations/](backend/migrations/), Clerk JWT verification, enforced
+> tenant isolation, live updates over SSE, CRUD for patients, workflows,
+> conditions, medications and call logs, and the workflow engine in
+> [backend/app/engine/](backend/app/engine/) — which walks the graph, parks at a
+> call, and resumes from the post-call webhook. No real call has been placed
+> through it yet. Google Calendar and PDF processing are not built.
+>
+> **[docs/progress.md](docs/progress.md)** — what is done, in progress, and left to do.
+> **[docs/backend-status.md](docs/backend-status.md)** — endpoint inventory, migrations to
+> apply, accounts you need, and what is deliberately unbuilt.
+> **[docs/ai-call-safety-policy.md](docs/ai-call-safety-policy.md)** — what the agent may
+> say to a patient, and what stops it saying anything else.
+>
+> The old backend remains readable at commit `91382a9`.
 
 ---
 
@@ -42,9 +70,9 @@ graph TB
     subgraph Frontend["FRONTEND — Next.js 16 + React 19"]
         direction TB
         Landing["/ Landing, About, Features, Pricing"]
-        Auth["(auth) Auth0 Sign-In / Sign-Up"]
+        Auth["(auth) Clerk Sign-In / Sign-Up"]
 
-        subgraph Dashboard["App Routes — Protected by Auth0"]
+        subgraph Dashboard["App Routes — Protected by Clerk middleware"]
             DashView["/dashboard — Stats, Patients, PDF Import"]
             Patients["/patients — Patient Directory"]
             PatientDetail["/patients/[id] — Profile, Conditions, Meds"]
@@ -97,10 +125,10 @@ graph TB
         ElevenLabs["ElevenLabs ConvAI API"]
         Twilio["Twilio Voice/SMS"]
         GoogleCal["Google Calendar API"]
-        Auth0Ext["Auth0"]
+        ClerkExt["Clerk"]
     end
 
-    Auth -.-> Auth0Ext
+    Auth -.-> ClerkExt
     ApiClient -->|REST| API
     WorkflowBuilder -->|save nodes/edges| WorkflowsAPI
     DashView -->|list patients, workflows, calls| PatientsAPI
@@ -126,8 +154,8 @@ graph TB
 |-------|--------------|---------------|
 | **Frontend** | Next.js 16, React 19, TypeScript 5, Tailwind CSS 4 | App Router with protected routes, server/client components, responsive UI |
 | **Workflow UI** | React Flow (@xyflow/react), Dagre | Visual workflow builder with drag-and-drop nodes and edges |
-| **Authentication** | Auth0 (`@auth0/auth0-react`) | Sign-in/sign-up, `user.sub` as `doctor_id` for data scoping |
-| **Backend** | FastAPI, Uvicorn, Python 3.12+ | REST API, Pydantic schemas, async handlers |
+| **Authentication** | Clerk (`@clerk/nextjs`) | Sign-in/sign-up, `user.id` as `doctor_id` for data scoping, `middleware.ts` route protection |
+| **Backend** | FastAPI, Uvicorn, Python 3.12+ | REST API, Pydantic schemas, Clerk JWT verification, tenant-scoped data access |
 | **Database** | Supabase (PostgreSQL) | Workflows, patients, conditions, medications, call_logs, pdf_documents |
 | **Voice AI** | ElevenLabs Conversational AI | Outbound AI voice calls via Twilio; webhook for call outcomes |
 | **Telephony** | Twilio | Voice calls (ElevenLabs integration), SMS fallback |
@@ -136,7 +164,7 @@ graph TB
 | **HTTP Client** | httpx | Async requests to ElevenLabs, Google APIs |
 | **UI** | shadcn/ui, Lucide React | Buttons, modals, icons across dashboard and app |
 | **3D** | Three.js, React Three Fiber, Drei | Marketing page visuals (sphere, particles) |
-| **Deployment** | Vercel, Render | Frontend on Vercel; backend on Render (uvicorn) |
+| **Deployment** | Vercel, container | Frontend on Vercel; backend ships as a Docker image, production host not yet chosen (Render removed) |
 
 ---
 
@@ -147,7 +175,7 @@ graph TB
 ```
 frontend/
 ├── app/                              # Next.js App Router
-│   ├── layout.tsx                    # Root layout with Auth0Provider
+│   ├── layout.tsx                    # Root layout with ClerkProvider
 │   ├── globals.css                   # Tailwind theme
 │   ├── (auth)/                       # Auth routes
 │   │   ├── signIn/[[...sign-in]]/page.tsx
@@ -182,31 +210,39 @@ frontend/
 │   ├── supabase.ts                  # Supabase client
 │   └── utils.ts
 ├── types/
-└── middleware.ts                    # Auth0 route protection
+└── middleware.ts                    # Clerk route protection (deny by default)
 ```
 
 ### Backend
 
 ```
 backend/
-├── main.py                           # FastAPI app, CORS, router
 ├── app/
-│   ├── api/
-│   │   └── endpoints.py             # All REST routes
+│   ├── main.py                       # FastAPI app, CORS, error handlers
 │   ├── core/
-│   │   └── config.py                 # Pydantic settings
-│   └── services/
-│       ├── supabase_service.py       # DB CRUD
-│       ├── workflow_engine.py        # Graph execution
-│       ├── elevenlabs_service.py     # Outbound calls
-│       ├── google_calendar_service.py
-│       └── pdf_service.py            # PDF extraction
+│   │   ├── config.py                 # Settings; fails fast when incomplete
+│   │   ├── security.py               # Clerk JWT verification (RS256 + JWKS)
+│   │   └── errors.py                 # Error envelope, no internal leakage
+│   ├── db/
+│   │   ├── client.py                 # Supabase client
+│   │   └── tenancy.py                # TenantScope — the isolation choke point
+│   ├── api/
+│   │   ├── deps.py                   # Only place a TenantScope is built
+│   │   └── routes/
+│   │       ├── health.py
+│   │       └── patients.py           # Reference vertical slice
+│   └── schemas/
+│       └── patient.py
 ├── migrations/
-│   └── 001_create_new_tables.sql
-├── requirements.txt
-├── Procfile                          # uvicorn for Render
+│   └── 000_initial_schema.sql        # All 11 tables, in version control
+├── tests/                            # 41 tests: auth + tenant isolation
+├── Dockerfile                        # Host-agnostic; replaces render.yaml
+├── pyproject.toml                    # Direct deps only
 └── .env.example
 ```
+
+See [backend/README.md](backend/README.md) for how to run it and how to port
+the next resource.
 
 ---
 
@@ -274,32 +310,57 @@ Process input, return TwiML
 
 ---
 
-## Routes & Protection
+## Routes & Protection *(pre-rebuild)*
 
-| Route | Purpose | Protection |
+> ✅ Now implemented. `middleware.ts` protects every route that is not
+> explicitly listed as public, so protection is the default and a new route is
+> covered without anyone remembering to add it. This closes
+> [docs/audit.md §4](docs/audit.md), which recorded that `(app)/layout.tsx` destructured
+> `isAuthenticated` and never used it — every "protected" route rendered for
+> anyone. Note that this only governs which pages are served: the backend
+> verifies its own token independently on every request.
+
+| Route | Purpose | Protection (intended) |
 |-------|---------|------------|
 | `/` | Landing page | Public |
 | `/about`, `/features`, `/pricing`, `/contact` | Marketing | Public |
 | `/signIn`, `/signUp` | Auth | Public |
-| `/dashboard` | Stats, patients, workflows, PDF import | Auth0 |
-| `/patients` | Patient directory | Auth0 |
-| `/patients/[id]` | Patient profile, conditions, medications | Auth0 |
-| `/workflow` | Workflow builder | Auth0 |
-| `/triggers` | Workflow triggers list | Auth0 |
-| `/calls` | Call logs | Auth0 |
-| `/appointments` | Calendar | Auth0 |
-| `/audit-log` | Activity log | Auth0 |
-| `/settings` | Profile, notifications | Auth0 |
+| `/dashboard` | Stats, patients, workflows, PDF import | Clerk |
+| `/patients` | Patient directory | Clerk |
+| `/patients/[id]` | Patient profile, conditions, medications | Clerk |
+| `/workflow` | Workflow builder | Clerk |
+| `/triggers` | Workflow triggers list | Clerk |
+| `/calls` | Call logs | Clerk |
+| `/appointments` | Calendar | Clerk |
+| `/audit-log` | Activity log | Clerk |
+| `/settings` | Profile, notifications | Clerk |
 
 ---
 
 ## REST API Endpoints
 
+### Implemented today
+
+All `/api/*` routes require `Authorization: Bearer <Clerk session token>` and are scoped
+to the token's `sub`. A missing or invalid token is a 401; another tenant's
+record is a 404.
+
+| Endpoint | Method | Auth |
+|----------|--------|------|
+| `/health` | GET | Public |
+| `/health/ready` | GET | Public |
+| `/api/patients` | GET, POST | Required |
+| `/api/patients/{id}` | GET, PUT, DELETE | Required |
+
+### Not yet ported *(pre-rebuild)*
+
+The routes below existed in the old backend and are the target surface for the
+rebuild. The frontend still calls them, so they will be restored at the same
+paths. None of them exist right now.
+
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/health` | GET | Health check |
-| `/api/patients` | GET, POST | List, create patients |
-| `/api/patients/{id}` | GET, PUT, DELETE | Get, update, delete patient |
+| `/api/patients/{id}/conditions` | GET, POST | List, create conditions |
 | `/api/patients/{id}/conditions` | GET, POST | List, create conditions |
 | `/api/patients/{id}/conditions/{cid}` | PUT, DELETE | Update, delete condition |
 | `/api/patients/{id}/medications` | GET, POST | List, create medications |
@@ -330,6 +391,12 @@ Process input, return TwiML
 
 ## Database Schema (Core Tables)
 
+> The authoritative schema is
+> [backend/migrations/000_initial_schema.sql](backend/migrations/000_initial_schema.sql).
+> The sketch below is a summary; where the two differ, the migration wins.
+> Note it now includes `patients.email`, `workflows.doctor_name` and
+> `call_logs.doctor_id`, which the old code read but no migration ever created.
+
 ```
 workflows              patients              call_logs
 ├── id                 ├── id                ├── id
@@ -358,29 +425,36 @@ workflows              patients              call_logs
 | Variable | Purpose |
 |----------|---------|
 | `NEXT_PUBLIC_API_URL` | Backend URL (default `http://localhost:8000`) |
-| `NEXT_PUBLIC_AUTH0_DOMAIN` | Auth0 tenant domain |
-| `NEXT_PUBLIC_AUTH0_CLIENT_ID` | Auth0 client ID |
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk instance key. Must be the **same instance** as the backend's `CLERK_ISSUER` |
+| `CLERK_SECRET_KEY` | Server-side only, used by `middleware.ts`. Never prefix with `NEXT_PUBLIC_` |
+| `NEXT_PUBLIC_CLERK_SIGN_IN_URL` | `/signIn` — must match the route and the public matcher in `middleware.ts` |
+| `NEXT_PUBLIC_CLERK_SIGN_UP_URL` | `/signUp` — same |
+
+The `NEXT_PUBLIC_SUPABASE_*` variables are gone. `lib/supabase.ts` was deleted:
+nothing imported it, and it published project credentials to the browser for a
+client that was never used. All data access goes through the backend.
 
 ### Backend (`backend/.env`)
+
+Required — the process refuses to start without all three:
 
 | Variable | Purpose |
 |----------|---------|
 | `SUPABASE_URL` | Supabase project URL |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key |
-| `TWILIO_ACCOUNT_SID` | Twilio account SID |
-| `TWILIO_AUTH_TOKEN` | Twilio auth token |
-| `TWILIO_PHONE_NUMBER` | Twilio phone number |
-| `ELEVENLABS_API_KEY` | ElevenLabs API key |
-| `ELEVENLABS_AGENT_ID` | ElevenLabs agent ID |
-| `ELEVENLABS_PHONE_NUMBER_ID` | ElevenLabs phone number ID |
-| `AUTH0_DOMAIN` | Auth0 tenant domain |
-| `AUTH0_CLIENT_ID` | Auth0 application client ID |
-| `AUTH0_CLIENT_SECRET` | Auth0 application client secret |
-| `AUTH0_M2M_CLIENT_ID` | Auth0 M2M app (for Google tokens) |
-| `AUTH0_M2M_CLIENT_SECRET` | Auth0 M2M app secret |
-| `APP_BASE_URL` | Backend base URL (for webhooks) |
+| `SUPABASE_SERVICE_ROLE_KEY` | Service role key. Bypasses RLS; never expose to a browser |
+| `CLERK_ISSUER` | Clerk Frontend API origin, no trailing slash. Both the `iss` we verify and the root of the JWKS URL |
+
+Optional:
+
+| Variable | Purpose |
+|----------|---------|
+| `ENVIRONMENT` | `production` disables `/docs` and `/openapi.json` |
+| `CORS_ORIGINS` | Comma-separated exact origins |
+| `CORS_ORIGIN_REGEX` | For preview deployments. `allow_origins` does exact matching and never expanded globs like `https://*.vercel.app` |
+
+Twilio and the optional `CLERK_SECRET_KEY` are listed in
+[backend/.env.example](backend/.env.example) but are not read by any code yet —
+those integrations have not been ported.
 
 ---
 
@@ -390,22 +464,29 @@ workflows              patients              call_logs
 
 - **Node.js** 18+ and **npm**
 - **Python** 3.12+
-- Accounts: Supabase, Auth0, Twilio, ElevenLabs, Google Cloud
+- Accounts: Supabase, Clerk, Twilio, ElevenLabs, Google Cloud
 
 ### Backend
 
 ```bash
 cd backend
-pip install -r requirements.txt
+python -m venv .venv
+.venv/Scripts/activate          # Windows;  source .venv/bin/activate elsewhere
+pip install -e ".[dev]"
 
 # Configure environment
 cp .env.example .env
-# Edit .env with your credentials
+# Fill in the four required values
+
+# Apply the schema (once, against a fresh Supabase project)
+psql "$DATABASE_URL" -f migrations/000_initial_schema.sql
 
 # Start the server
-uvicorn main:app --reload --port 8000
+uvicorn app.main:app --reload --port 8000
 # → Runs on http://localhost:8000
 # → Docs at http://localhost:8000/docs
+
+pytest                          # 41 tests
 ```
 
 ### Frontend
@@ -415,7 +496,7 @@ cd frontend
 npm install
 
 # Configure environment
-# Create .env.local with Auth0, API URL, Supabase keys
+# cp .env.example .env.local, then fill in the Clerk keys
 
 # Start development server
 npm run dev
@@ -424,7 +505,7 @@ npm run dev
 
 ### Quick Test
 
-1. Open `http://localhost:3000` → sign in via Auth0
+1. Open `http://localhost:3000` → sign in via Clerk
 2. Navigate to `/dashboard` → add a patient, view workflows
 3. Open `/workflow` → build a workflow (trigger → condition → call patient)
 4. Run workflow manually or simulate a lab event via `POST /api/lab-event`
@@ -434,11 +515,17 @@ npm run dev
 ## Deployment
 
 - **Frontend**: Vercel (Next.js)
-- **Backend**: Render (Python, `uvicorn main:app --host 0.0.0.0 --port $PORT`)
+- **Backend**: container, host not yet chosen — see [backend/Dockerfile](backend/Dockerfile)
 - **Database**: Supabase (hosted PostgreSQL)
-- **Auth**: Auth0
+- **Auth**: Clerk
 
-See `render.yaml` for Render configuration.
+> **Render has been removed.** `render.yaml` is deleted, so nothing new deploys
+> there. That does **not** stop a Render service already running from its last
+> build — it keeps serving until it is suspended or deleted in the Render
+> dashboard, and its credentials keep working until rotated.
+>
+> Production will be a new, independent service built from the Dockerfile. Set
+> `ENVIRONMENT=production` there to disable `/docs` and `/openapi.json`.
 
 ---
 
@@ -446,7 +533,7 @@ See `render.yaml` for Render configuration.
 
 | What | How |
 |------|-----|
-| **Frontend** | Next.js 16 app with Auth0, dashboard, patients, workflow builder, call logs |
+| **Frontend** | Next.js 16 app with Clerk, dashboard, patients, workflow builder, call logs |
 | **Backend** | FastAPI with workflow engine, Supabase, ElevenLabs, Twilio, Google Calendar |
 | **Workflows** | Triggers → conditions → actions; stored as nodes/edges in Supabase |
 | **Execution** | Lab event, PDF upload, or manual → workflow engine → actions (call, SMS, etc.) |

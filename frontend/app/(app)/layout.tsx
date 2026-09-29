@@ -1,6 +1,6 @@
 "use client";
 
-import { useAuth0 } from "@auth0/auth0-react";
+import { useAuth } from "@clerk/nextjs";
 import { Sidebar } from "@/components/app/sidebar";
 import { Topbar } from "@/components/app/topbar";
 
@@ -9,9 +9,12 @@ export default function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { isLoading, isAuthenticated } = useAuth0();
+  // Presentation only. proxy.ts already refused this route to anyone
+  // without a session, so this is about not flashing an empty shell while
+  // Clerk hydrates — not about keeping anyone out.
+  const { isLoaded } = useAuth();
 
-  if (isLoading) {
+  if (!isLoaded) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="text-sm text-muted-foreground">Loading…</div>

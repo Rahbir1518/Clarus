@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useAuth0 } from "@auth0/auth0-react";
+import { useUser } from "@clerk/nextjs";
 import { listCallLogs } from "@/services/api";
+import { useLiveEvents } from "@/hooks/useLiveEvents";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -27,8 +28,8 @@ const statusConfig: Record<string, { label: string; icon: React.ComponentType<{ 
 };
 
 export default function CallsPage() {
-  const { user } = useAuth0();
-  const doctorId = user?.sub;
+  const { user } = useUser();
+  const doctorId = user?.id;
 
   const [callLogs, setCallLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -36,22 +37,41 @@ export default function CallsPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>("all");
 
-  const fetchCallLogs = useCallback(async () => {
-    if (!doctorId) return;
-    setLoading(true);
-    try {
-      const data = await listCallLogs(undefined, doctorId);
-      setCallLogs(Array.isArray(data) ? data : []);
-    } catch {
-      setCallLogs([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [doctorId]);
+  // `silent` for refreshes driven by a live event rather than by the user.
+  // Showing the spinner would blank the table every time a call completes,
+  // which reads as a page reload rather than a row updating.
+  const fetchCallLogs = useCallback(
+    async ({ silent = false }: { silent?: boolean } = {}) => {
+      if (!doctorId) return;
+      if (!silent) setLoading(true);
+      try {
+        const data = await listCallLogs(undefined, doctorId);
+        setCallLogs(Array.isArray(data) ? data : []);
+      } catch {
+        // A failed background refresh keeps the rows already on screen: stale
+        // is better than empty, and the next event will try again.
+        if (!silent) setCallLogs([]);
+      } finally {
+        if (!silent) setLoading(false);
+      }
+    },
+    [doctorId],
+  );
 
   useEffect(() => {
     fetchCallLogs();
   }, [fetchCallLogs]);
+
+  // The backend tells us a call log changed; it never sends the call log
+  // itself, so this re-reads through the normal audited route.
+  useLiveEvents(
+    useCallback(
+      (event) => {
+        if (event.name === 'call_log.updated') fetchCallLogs({ silent: true });
+      },
+      [fetchCallLogs],
+    ),
+  );
 
   const filtered = callLogs.filter((cl) => {
     if (filterStatus !== "all" && cl.status !== filterStatus) return false;
@@ -111,7 +131,9 @@ export default function CallsPage() {
             </button>
           ))}
         </div>
-        <Button size="sm" variant="outline" onClick={fetchCallLogs}>
+        {/* Wrapped, not passed directly: onClick hands the handler a mouse
+            event, which would arrive as the options argument. */}
+        <Button size="sm" variant="outline" onClick={() => fetchCallLogs()}>
           Refresh
         </Button>
       </div>

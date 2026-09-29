@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, use } from "react";
-import { useAuth0 } from "@auth0/auth0-react";
+import { useUser } from "@clerk/nextjs";
 import {
   getPatient,
   updatePatient,
@@ -61,7 +61,7 @@ export default function PatientDetailPage({
   params: Promise<{ patientId: string }>;
 }) {
   const { patientId } = use(params);
-  const { user } = useAuth0();
+  const { user } = useUser();
 
   const [patient, setPatient] = useState<any>(null);
   const [conditions, setConditions] = useState<any[]>([]);
@@ -111,7 +111,7 @@ export default function PatientDetailPage({
         getPatient(patientId),
         listConditions(patientId).catch(() => []),
         listMedications(patientId).catch(() => []),
-        listCallLogs(undefined, user?.sub).catch(() => []),
+        listCallLogs(undefined, user?.id).catch(() => []),
       ]);
       setPatient(p);
       setConditions(Array.isArray(conds) ? conds : []);

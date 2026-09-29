@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useAuth0 } from "@auth0/auth0-react";
+import { useUser } from "@clerk/nextjs";
 import {
   listWorkflows,
   deleteWorkflow,
@@ -32,8 +32,8 @@ export default function TriggersPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
 
-  const { user } = useAuth0();
-  const doctorId = user?.sub;
+  const { user } = useUser();
+  const doctorId = user?.id;
 
   const fetchWorkflows = useCallback(async () => {
     setLoading(true);
