@@ -37,9 +37,15 @@ from app.engine.context import RunContext
 from app.engine.graph import FALSE_BRANCH, TRUE_BRANCH, Node
 from app.engine.policy import PolicyRefusal
 from app.engine.steps import BLOCKED, FAILED, OK, PARKED, SKIPPED
-from app.integrations.elevenlabs.client import ElevenLabsClient, ElevenLabsError
+from app.integrations.elevenlabs.client import (
+    WEB_TRANSPORT,
+    ElevenLabsClient,
+    ElevenLabsError,
+)
 from app.integrations.elevenlabs.variables import build_dynamic_variables
+from app.scheduling.practice import load_schedule
 from app.integrations.elevenlabs.webhook import (
+    AWAITING_BROWSER,
     RUN_REF_VARIABLE,
     WHATSAPP_PERMISSION_REQUESTED,
     make_run_ref,
@@ -355,9 +361,16 @@ def _call_patient(ctx: RunContext, node: Node) -> Outcome:
     policy.assert_not_abnormal(abnormal=ctx.abnormal, reason=ctx.abnormal_reason)
 
     # --- whether to dial ---
-    phone = policy.assert_dialable(ctx.patient.get("phone"))
+    # CALL_TRANSPORT=web dials nothing, so the two gates about the patient's
+    # number do not apply: there is no number in play, and the person who
+    # answers is whoever is signed in to this practice. Every other gate does —
+    # the kill switch, the calling hours and the attempt cap govern whether the
+    # agent may speak to this patient at all, whatever carries the audio.
+    web = ctx.settings.call_transport_name == WEB_TRANSPORT
+    phone = None if web else policy.assert_dialable(ctx.patient.get("phone"))
     policy.assert_calls_enabled(ctx.settings)
-    policy.assert_number_allowed(phone, ctx.settings)
+    if phone is not None:
+        policy.assert_number_allowed(phone, ctx.settings)
     policy.assert_within_calling_hours(settings=ctx.settings)
     policy.assert_attempts_available(ctx.recent_call_attempts(), ctx.settings)
 
@@ -374,8 +387,12 @@ def _call_patient(ctx: RunContext, node: Node) -> Outcome:
         appointment_reason=reason,
         callback_number=callback,
         doctor_name=ctx.doctor_display_name(),
+        practice=ctx.scope.practice_settings(),
         settings=ctx.settings,
     )
+    if web:
+        return _await_browser(ctx, variables, reason)
+
     whatsapp = ctx.settings.call_transport_name == "whatsapp"
     if whatsapp and ctx.settings.elevenlabs_webhook_secret:
         # Lets the webhook find this run if the call is deferred behind a
@@ -456,6 +473,40 @@ def _call_patient(ctx: RunContext, node: Node) -> Outcome:
     )
 
 
+def _await_browser(ctx: RunContext, variables: dict[str, str], reason: str) -> Outcome:
+    """Park the run until the call is answered in the browser.
+
+    The CALL_TRANSPORT=web half of `_call_patient`. Nothing is dialled. The
+    variables are stored on the run's row so that whoever answers later is
+    handed exactly what this run built — rebuilding them at answer time would
+    re-read a patient that may have been edited, and a `today_date` that may
+    have rolled over.
+
+    From here on it is the web call path: routes/calls.py mints a token for
+    this row, the browser binds its conversation, and the post-call webhook
+    finds the row by conversation id and resumes the run the way it would
+    after a phone call. No run reference is added — the conversation is bound
+    before the call ends, so the webhook never needs one.
+    """
+    ctx.scope.update_owned(
+        "call_logs",
+        ctx.call_log_id,
+        {
+            "status": "in_progress",
+            "timezone": ctx.settings.default_timezone,
+            "outcome": AWAITING_BROWSER,
+            "call_variables": variables,
+        },
+    )
+    ctx.call_placed = True
+    return Outcome(
+        PARKED,
+        f"Call about {reason} is ready to answer in the browser (Call test page). "
+        f"The run resumes when the post-call webhook arrives.",
+        entity={"table": "call_logs", "id": str(ctx.call_log_id)},
+    )
+
+
 def _send_sms(ctx: RunContext, node: Node) -> Outcome:
     """Not implemented, and loud about it.
 
@@ -521,6 +572,20 @@ def _schedule_appointment(ctx: RunContext, node: Node) -> Outcome:
             f"Parameter duration_minutes={raw_minutes!r} is not a positive whole "
             f"number of minutes."
         )
+
+    # The agent checked this time against the calendar during the call, but
+    # the call took minutes and the calendar did not stand still: staff or
+    # another run may have taken the slot since. Booking it anyway puts two
+    # patients in one room, so it goes to a person instead.
+    schedule = load_schedule(ctx.scope, ctx.settings, minutes=minutes)
+    problem = schedule.booking_problem(starts_at, minutes, enforce_hours=True)
+    if problem:
+        ctx.require_review("the agreed time could not be booked: " + problem)
+        return blocked(
+            f"Not booked: {problem} The patient agreed to this time on the call, "
+            f"so a person needs to offer them another."
+        )
+
     appointment = ctx.scope.insert_owned(
         "appointments",
         {

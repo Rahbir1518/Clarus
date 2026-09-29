@@ -13,6 +13,12 @@ project lost its agent configuration because the dashboard was the only copy.
 
 After a create, put the printed agent id into your .env as
 ELEVENLABS_AGENT_ID so the call path can find it.
+
+A spec with `tools_file:` also registers the webhook tools that file declares
+(agents/tools.yaml) — found by name and updated in place — and attaches them to
+the agent. That needs PUBLIC_API_URL (where ElevenLabs will call them) and
+ELEVENLABS_TOOL_SECRET in .env; the sync refuses to run without them rather than
+registering tools that could never succeed.
 """
 from __future__ import annotations
 
@@ -31,6 +37,11 @@ from app.core.config import get_settings  # noqa: E402
 from app.integrations.elevenlabs.client import (  # noqa: E402
     ElevenLabsClient,
     ElevenLabsError,
+)
+from app.integrations.elevenlabs.tools import (  # noqa: E402
+    ToolSpecError,
+    build_tool_configs,
+    masked,
 )
 
 DEFAULT_SPEC = Path(__file__).resolve().parent.parent / "agents" / "appointment_confirmation.yaml"
@@ -79,6 +90,43 @@ def collected_fields(agent: dict) -> set[str]:
     return set()
 
 
+def load_tool_configs(spec: dict, spec_path: Path) -> list[dict]:
+    """The webhook tools this spec asks for, or [] when it names none.
+
+    Pops `tools_file` from the spec: it is ours, not an ElevenLabs field.
+    """
+    tools_file = spec.pop("tools_file", None)
+    if not tools_file:
+        return []
+    with (spec_path.parent / tools_file).open("r", encoding="utf-8") as handle:
+        tools_spec = yaml.safe_load(handle)
+    settings = get_settings()
+    return build_tool_configs(
+        tools_spec,
+        public_api_url=settings.public_api_url,
+        secret=settings.elevenlabs_tool_secret,
+    )
+
+
+def upsert_tools(client: ElevenLabsClient, configs: list[dict]) -> list[str]:
+    """Create or update each tool by name; return their ids in order."""
+    existing = {
+        (tool.get("tool_config") or {}).get("name"): tool.get("id")
+        for tool in client.list_tools()
+    }
+    ids = []
+    for config in configs:
+        tool_id = existing.get(config["name"])
+        if tool_id:
+            print(f"  updating tool {config['name']} ({tool_id})")
+            client.update_tool(tool_id, config)
+        else:
+            tool_id = client.create_tool(config)
+            print(f"  created tool {config['name']} ({tool_id})")
+        ids.append(tool_id)
+    return ids
+
+
 def main() -> int:
     # Bangla on a Windows console: the default cp1252 encoding raises on the
     # first character it cannot represent.
@@ -113,12 +161,23 @@ def main() -> int:
 
     spec = load_spec(args.spec)
     wanted = declared_fields(spec)
+    try:
+        tool_configs = load_tool_configs(spec, args.spec)
+    except (OSError, ToolSpecError) as exc:
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        return 2
 
     print(f"Spec:              {args.spec}")
     print(f"Agent name:        {spec.get('name')}")
     print(f"Data collection:   {', '.join(sorted(wanted)) or '(none)'}")
+    print(f"Tools:             {', '.join(c['name'] for c in tool_configs) or '(none)'}")
+    for config in tool_configs:
+        print(f"                   {config['name']} -> {config['api_schema']['url']}")
 
     if args.dry_run:
+        if tool_configs:
+            print("\n--- tools ---")
+            print(json.dumps(masked(tool_configs), indent=2))
         print("\n--- payload ---")
         print(json.dumps(spec, indent=2)[:4000])
         print("\nDry run: nothing was sent.")
@@ -132,6 +191,13 @@ def main() -> int:
         return 2
 
     try:
+        tool_ids: list[str] = []
+        if tool_configs:
+            print("\nSyncing tools ...")
+            tool_ids = upsert_tools(client, tool_configs)
+            # Tools are referenced by id; inline definitions are deprecated.
+            spec["conversation_config"]["agent"]["prompt"]["tool_ids"] = tool_ids
+
         if args.agent_id:
             print(f"\nUpdating agent {args.agent_id} ...")
             client.update_agent(args.agent_id, spec)
@@ -153,6 +219,23 @@ def main() -> int:
 
     actual = collected_fields(agent)
     missing = wanted - actual
+
+    attached = set(
+        ((agent.get("conversation_config") or {}).get("agent") or {})
+        .get("prompt", {})
+        .get("tool_ids")
+        or []
+    )
+    if set(tool_ids) - attached:
+        print(
+            f"\nWARNING: tools {sorted(set(tool_ids) - attached)} were synced but "
+            f"are not attached to the agent. It will not be able to check the "
+            f"calendar during calls.",
+            file=sys.stderr,
+        )
+        return 1
+    if tool_ids:
+        print(f"Tools attached:    {len(tool_ids)}")
 
     print(f"\nAgent id:          {agent_id}")
     print(f"Fields on server:  {', '.join(sorted(actual)) or '(none)'}")

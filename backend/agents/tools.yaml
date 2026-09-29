@@ -1,0 +1,55 @@
+# ===========================================================================
+# Clarus — the agent's calendar tools
+#
+# Shared by both agents (English and Bangla): each spec names this file with
+# `tools_file:` and scripts/sync_agent.py registers these as ElevenLabs webhook
+# tools, found by name and updated in place.
+#
+# NOT here, on purpose (see app/integrations/elevenlabs/tools.py):
+#   * the URL host — PUBLIC_API_URL, e.g. the ngrok URL
+#   * the secret header — ELEVENLABS_TOOL_SECRET
+#   * conversation_id — filled from system__conversation_id, never by the model,
+#     because it decides whose calendar is read
+#
+# Descriptions are instructions to the model, so they are English in both
+# agents, as the data_collection descriptions are.
+# ===========================================================================
+
+tools:
+  - name: clarus_available_slots
+    path: /api/elevenlabs/tools/available-slots
+    description: >-
+      Look up when the clinic has free appointment times. Call this before
+      offering any time, and again whenever the patient asks about a different
+      day. Returns the clinic's opening hours and free start times (24-hour
+      HH:MM, clinic local time) for the requested day, plus the next days that
+      have free times. If `ok` is false, offer no times: follow the returned
+      message. Never invent a time that is not in the result.
+    parameters:
+      date:
+        type: string
+        description: >-
+          Optional. The day the patient asked about, as YYYY-MM-DD, resolved
+          from what they said against today's date. Leave empty when they have
+          not named a day, to get the earliest free days.
+
+  - name: clarus_check_slot
+    path: /api/elevenlabs/tools/check-slot
+    description: >-
+      Check whether one specific date and time can be booked, before agreeing
+      to it. Use it for any time the patient proposes themselves. Returns
+      `available`, a `reason` (free, closed, outside_hours, taken, past,
+      too_far, invalid, hours_not_set), a message explaining it, the clinic's
+      opening hours that day, and `alternatives` with free times when it is not
+      available. Only confirm a time when `available` is true.
+    parameters:
+      date:
+        type: string
+        description: The proposed date as YYYY-MM-DD.
+      time:
+        type: string
+        description: >-
+          The proposed start time as 24-hour HH:MM in clinic local time, e.g.
+          16:00 for four in the afternoon. If the patient has not said which
+          part of the day, ask them before calling this.
+    required: [date, time]

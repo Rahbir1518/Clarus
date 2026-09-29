@@ -16,24 +16,23 @@
 import { useConversation, ConversationProvider } from '@elevenlabs/react';
 import { useCallback, useRef, useState } from 'react';
 
-import { bindCall, startWebCall, type CallReasonCode } from '@/services/api';
+import { bindCall, type WebCallStarted } from '@/services/api';
 
 type Props = {
-  patientId: string;
   /**
-   * Which of the permitted reasons the patient is given for the call — a code,
-   * not a sentence. The words themselves live on the server and are not settable
-   * from here, because anything settable from here is spoken to a patient. See
-   * docs/ai-call-safety-policy.md.
-   *
-   * The callback number a voicemail asks the patient to ring is configuration
-   * (PRACTICE_CALLBACK_NUMBER), for the same reason.
+   * Creates or claims the call log and mints the token: `startWebCall` for a
+   * call started here, `answerWebCall` for a workflow call parked on
+   * CALL_TRANSPORT=web. Either way the server builds the dynamic variables and
+   * this component passes them through untouched — anything settable from here
+   * is spoken to a patient. See docs/ai-call-safety-policy.md.
    */
-  reasonCode?: CallReasonCode;
+  begin: () => Promise<WebCallStarted>;
+  /** The start button's label. */
+  startLabel?: string;
   onEnded?: (callLogId: string) => void;
 };
 
-function WebCallInner({ patientId, reasonCode, onEnded }: Props) {
+function WebCallInner({ begin, startLabel = 'Start call', onEnded }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
 
@@ -66,7 +65,7 @@ function WebCallInner({ patientId, reasonCode, onEnded }: Props) {
       // and a spent token behind.
       await navigator.mediaDevices.getUserMedia({ audio: true });
 
-      const session = await startWebCall(patientId, { reasonCode });
+      const session = await begin();
       callLogId.current = session.call_log_id;
 
       conversation.startSession({
@@ -88,7 +87,7 @@ function WebCallInner({ patientId, reasonCode, onEnded }: Props) {
     } finally {
       setStarting(false);
     }
-  }, [patientId, reasonCode, conversation]);
+  }, [begin, conversation]);
 
   const connected = conversation.status === 'connected';
 
@@ -101,7 +100,7 @@ function WebCallInner({ patientId, reasonCode, onEnded }: Props) {
           disabled={connected || starting}
           className="rounded-md bg-primary px-4 py-2 text-primary-foreground disabled:opacity-50"
         >
-          {starting ? 'Connecting…' : 'Start call'}
+          {starting ? 'Connecting…' : startLabel}
         </button>
         <button
           type="button"

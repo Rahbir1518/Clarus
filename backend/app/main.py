@@ -11,6 +11,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import (
+    agent_tools,
+    appointments,
     call_logs,
     calls,
     clinical,
@@ -19,6 +21,7 @@ from app.api.routes import (
     executions,
     health,
     patients,
+    practice,
     webhooks,
     workflows,
 )
@@ -86,7 +89,11 @@ app.include_router(workflows.router, prefix="/api")
 app.include_router(executions.workflow_router, prefix="/api")
 app.include_router(executions.lab_event_router, prefix="/api")
 app.include_router(call_logs.router, prefix="/api")
+app.include_router(appointments.router, prefix="/api")
+app.include_router(practice.router, prefix="/api")
 app.include_router(calls.router, prefix="/api")
 app.include_router(events.router, prefix="/api")
 # Signature-authenticated, not token-authenticated. See routes/webhooks.py.
 app.include_router(webhooks.router, prefix="/api")
+# Shared-secret and live-conversation authenticated. See routes/agent_tools.py.
+app.include_router(agent_tools.router, prefix="/api")

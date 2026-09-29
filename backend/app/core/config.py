@@ -61,10 +61,12 @@ class Settings(BaseSettings):
     elevenlabs_phone_number_id: str = ""
 
     # How an outbound call reaches the patient: "twilio" (a phone number
-    # imported into ElevenLabs, used with elevenlabs_phone_number_id) or
-    # "whatsapp" (a WhatsApp Business number connected in ElevenLabs). Same
-    # agent, same dynamic variables, same post-call webhook either way — see
-    # ElevenLabsClient.place_call.
+    # imported into ElevenLabs, used with elevenlabs_phone_number_id),
+    # "whatsapp" (a WhatsApp Business number connected in ElevenLabs), or "web"
+    # (nothing is dialled — the run parks and the call is answered in the
+    # browser, for when there is no number to call from). Same agent, same
+    # dynamic variables, same post-call webhook every way — see
+    # ElevenLabsClient.place_call and routes/calls.py.
     call_transport: str = "twilio"
 
     # WhatsApp. The phone number *id* from the ElevenLabs WhatsApp page
@@ -87,6 +89,15 @@ class Settings(BaseSettings):
     # How much clock skew to tolerate on a webhook timestamp before treating it
     # as a replay.
     webhook_tolerance_seconds: int = 300
+
+    # Agent tools: the endpoints the agent calls mid-conversation to find free
+    # appointment times (app/api/routes/agent_tools.py). ElevenLabs sends this
+    # value in the X-Clarus-Tool-Secret header. Empty means every tool call is
+    # refused, for the same reason an empty webhook secret refuses webhooks.
+    elevenlabs_tool_secret: str = ""
+    # The backend's public origin, e.g. the ngrok URL in development. Only
+    # scripts/sync_agent.py reads it, to tell ElevenLabs where the tools live.
+    public_api_url: str = ""
 
     # IANA name, spoken to the agent as {{timezone}} so it can resolve "next
     # Tuesday" correctly. Also what call_logs.timezone should record. A single
@@ -134,6 +145,19 @@ class Settings(BaseSettings):
     # from call_logs rows that reached a provider conversation, so a run blocked
     # before dialling does not consume an attempt.
     max_call_attempts_per_patient: int = 3
+
+    # ---- Availability. Opening hours and appointment length are per practice
+    # and set in the app (doctors.clinic_hours / appointment_minutes); these
+    # bound what the agent is offered and told.
+    # Appointment length for a practice that has not chosen one.
+    default_appointment_minutes: int = 30
+    # How far ahead a patient may book, in days.
+    availability_horizon_days: int = 14
+    # How many days with free times the agent is given when it asks what is
+    # free, and how many times per day. It offers two or three; the rest are
+    # there so it can answer "anything later?" without another call.
+    availability_days_offered: int = 3
+    availability_times_per_day: int = 8
 
     @property
     def clerk_jwks_url(self) -> str:

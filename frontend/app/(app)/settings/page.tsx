@@ -2,6 +2,8 @@
 
 import { useClerk, useUser } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
+import { ClinicHoursCard } from "@/components/settings/clinic-hours";
+import { PracticeProfileCard } from "@/components/settings/practice-profile";
 import { User, Mail, Shield, LogOut, ExternalLink } from "lucide-react";
 
 export default function SettingsPage() {
@@ -65,6 +67,10 @@ export default function SettingsPage() {
           )}
         </div>
       </div>
+
+      <PracticeProfileCard />
+
+      <ClinicHoursCard />
 
       {/* App info */}
       <div className="rounded-xl border border-border bg-card">

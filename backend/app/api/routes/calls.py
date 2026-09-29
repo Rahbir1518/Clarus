@@ -4,8 +4,15 @@ Two routes, and between them they close the gap that made routes/call_logs.py
 read-only: something has to create the call log a provider webhook later
 completes.
 
-    POST /api/calls/web            start a browser conversation
-    POST /api/calls/web/{id}/bind  report the conversation id back
+    POST /api/calls/web              start a browser conversation
+    POST /api/calls/web/{id}/bind    report the conversation id back
+    GET  /api/calls/web/pending      workflow calls waiting to be answered
+    POST /api/calls/web/{id}/answer  answer one of them
+
+The last two exist for CALL_TRANSPORT=web, where a workflow's call_patient
+node dials nothing and parks instead. Answering hands the browser the
+variables the run stored when it parked, and from there it is the same path as
+the first two: bind on connect, and the webhook resumes the run.
 
 Why two, rather than one that does everything: a WebRTC session is opened by
 the browser, so the conversation id is minted there. On the phone path
@@ -26,10 +33,17 @@ import logging
 from fastapi import APIRouter, status
 
 from app.api.deps import TenantDep
+from app.core.errors import Conflict
 from app.engine.policy import resolve_call_reason
 from app.integrations.elevenlabs.client import ElevenLabsClient
 from app.integrations.elevenlabs.variables import build_dynamic_variables
-from app.schemas.call import BindConversation, StartWebCall, WebCallStarted
+from app.integrations.elevenlabs.webhook import AWAITING_BROWSER
+from app.schemas.call import (
+    BindConversation,
+    PendingWebCall,
+    StartWebCall,
+    WebCallStarted,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +80,9 @@ def start_web_call(body: StartWebCall, scope: TenantDep) -> dict:
     # rule the workflow engine's call_patient node follows, for the same reason:
     # anything here is spoken to a patient.
     variables = build_dynamic_variables(
-        patient=patient, appointment_reason=resolve_call_reason(body.model_dump())
+        patient=patient,
+        appointment_reason=resolve_call_reason(body.model_dump()),
+        practice=scope.practice_settings(),
     )
 
     # After the insert: a token minted for a call log that failed to write is a
@@ -101,3 +117,55 @@ def bind_conversation(
     logger.info(
         "Bound conversation %s to call log %s", body.conversation_id, call_log_id
     )
+
+
+@router.get("/web/pending", response_model=list[PendingWebCall])
+def list_pending_web_calls(scope: TenantDep) -> list[dict]:
+    """Workflow calls parked on CALL_TRANSPORT=web, newest first.
+
+    A row stops being pending the moment a conversation is bound to it, so a
+    call already answered in another tab is not offered twice.
+    """
+    rows = scope.list_owned("call_logs", filters={"outcome": AWAITING_BROWSER})
+    return [
+        {
+            "call_log_id": str(row["id"]),
+            "patient_id": row.get("patient_id"),
+            "workflow_id": row.get("workflow_id"),
+            "created_at": row.get("created_at"),
+        }
+        for row in rows
+        if not row.get("conversation_id")
+    ]
+
+
+@router.post("/web/{call_log_id}/answer", response_model=WebCallStarted)
+def answer_web_call(call_log_id: str, scope: TenantDep) -> dict:
+    """Answer a parked workflow call: a token, and the variables it stored.
+
+    The variables come off the row, exactly as the run built them — never from
+    the request, which has no body. 409 for a row that is not waiting to be
+    answered, including one already bound to a conversation: answering it again
+    would open a second conversation whose outcome has nowhere to go.
+
+    Answering twice before binding is harmless. It mints a second token; the
+    first conversation to bind wins, and the other's bind is a 409.
+    """
+    row = scope.get_owned("call_logs", call_log_id)
+    variables = row.get("call_variables")
+    if (
+        row.get("outcome") != AWAITING_BROWSER
+        or row.get("conversation_id")
+        or not isinstance(variables, dict)
+        or not variables
+    ):
+        raise Conflict("This call is not waiting to be answered")
+
+    token = ElevenLabsClient().conversation_token()
+
+    logger.info("Web call answered: call_log=%s", call_log_id)
+    return {
+        "call_log_id": str(row["id"]),
+        "token": token,
+        "dynamic_variables": {str(k): str(v) for k, v in variables.items()},
+    }

@@ -1,0 +1,47 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 549 >>
+stream
+BT /F1 10 Tf 14 TL 40 800 Td
+(Clarus Test Diagnostic Centre) Tj T*
+(Patient Name: Test Patient   Date of Birth: 21/06/1985   Age: 41) Tj T*
+(MRN: CLR-TEST-0001   Phone: +16473283451) Tj T*
+(Insurance: Test Health Plan) Tj T*
+(Collection Date: 25/09/2026) Tj T*
+(Test Result Unit Reference) Tj T*
+(HbA1c 5.4 % 4.0-5.6) Tj T*
+(Fasting Glucose 92 mg/dL 70-100) Tj T*
+(Haemoglobin 14.2 g/dL 13.0-17.0) Tj T*
+(Total Cholesterol 180 mg/dL 125-200) Tj T*
+(Current Medications:) Tj T*
+(1. Atorvastatin 10 mg once daily) Tj T*
+() Tj T*
+(Page 1 of 1) Tj T*
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000000841 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+911
+%%EOF

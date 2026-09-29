@@ -1,0 +1,44 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 476 >>
+stream
+BT /F1 10 Tf 14 TL 40 800 Td
+(Square Hospital - Outpatient Summary) Tj T*
+(Patient Name: Fatema Khatun   Date of Birth: 22/07/1975) Tj T*
+(MRN: SQH-44821   Phone: +8801811000202) Tj T*
+(Insurance: MetLife Bangladesh) Tj T*
+(Visit Date: 18/09/2026) Tj T*
+(Test Result Unit Reference) Tj T*
+(Systolic BP 148 mmHg 90-130) Tj T*
+(Total Cholesterol 231 mg/dL 125-200) Tj T*
+(Current Medications:) Tj T*
+(1. Losartan 50 mg once daily) Tj T*
+(2. Atorvastatin 20 mg at night) Tj T*
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000000768 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+838
+%%EOF
