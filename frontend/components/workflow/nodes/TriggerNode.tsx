@@ -9,7 +9,7 @@ export default function TriggerNode({ data, selected }: NodeProps) {
   return (
     <div
       className={`
-        min-w-[192px] rounded-xl border-2 px-4 py-3
+        min-w-[220px] rounded-xl border-2 px-4 py-3
         bg-card
         transition-all duration-150
         ${selected
@@ -20,15 +20,15 @@ export default function TriggerNode({ data, selected }: NodeProps) {
     >
       {/* Header */}
       <div className="flex items-center gap-2 mb-2">
-        <span className="text-blue-600 text-base leading-none">⚡</span>
-        <span className="text-[10px] text-blue-600 uppercase tracking-widest font-bold">Trigger</span>
+        <span className="size-2 rounded-full bg-blue-500" />
+        <span className="text-xs text-blue-600 uppercase tracking-widest font-bold">Trigger</span>
       </div>
 
       {/* Label */}
       <p className="text-sm font-semibold text-foreground leading-tight">{d.label}</p>
 
       {/* Node type */}
-      <p className="text-[11px] text-blue-400 font-mono mt-1 truncate">{d.nodeType}</p>
+      <p className="text-[13px] text-blue-400 font-mono mt-1 truncate">{d.nodeType}</p>
 
       {/* Source handle — bottom center */}
       <Handle

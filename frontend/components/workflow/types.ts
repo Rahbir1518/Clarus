@@ -236,7 +236,6 @@ export const CATEGORY_STYLES = {
     badge: 'text-blue-600 bg-blue-50 border-blue-200',
     palette: 'bg-blue-50 border-blue-200 hover:bg-blue-100',
     dot: 'bg-blue-500',
-    icon: '⚡',
     label: 'Trigger',
   },
   Actions: {
@@ -250,7 +249,6 @@ export const CATEGORY_STYLES = {
     badge: 'text-purple-600 bg-purple-50 border-purple-200',
     palette: 'bg-purple-50 border-purple-200 hover:bg-purple-100',
     dot: 'bg-purple-500',
-    icon: '⚙',
     label: 'Action',
   },
   Conditionals: {
@@ -264,7 +262,6 @@ export const CATEGORY_STYLES = {
     badge: 'text-amber-600 bg-amber-50 border-amber-200',
     palette: 'bg-amber-50 border-amber-200 hover:bg-amber-100',
     dot: 'bg-amber-500',
-    icon: '◇',
     label: 'Condition',
   },
   Output: {
@@ -278,7 +275,6 @@ export const CATEGORY_STYLES = {
     badge: 'text-gray-600 bg-gray-50 border-gray-200',
     palette: 'bg-gray-50 border-gray-200 hover:bg-gray-100',
     dot: 'bg-gray-500',
-    icon: '■',
     label: 'Output',
   },
 } as const;

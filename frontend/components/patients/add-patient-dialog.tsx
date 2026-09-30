@@ -85,7 +85,7 @@ export function AddPatientDialog({
 }: {
   doctorId?: string;
   onClose: () => void;
-  onCreated: () => void;
+  onCreated: (patient: { id: string; name: string; phone: string }) => void;
 }) {
   const [name, setName] = useState("");
   const [country, setCountry] = useState<CountryCode>(DEFAULT_COUNTRY);
@@ -114,8 +114,8 @@ export function AddPatientDialog({
     setSaving(true);
     setError(null);
     try {
-      await createPatient({ name: name.trim(), phone: check.e164, doctor_id: doctorId ?? "unknown" });
-      onCreated();
+      const created = await createPatient({ name: name.trim(), phone: check.e164, doctor_id: doctorId ?? "unknown" });
+      onCreated(created);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not add the patient.");
       setSaving(false);

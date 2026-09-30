@@ -5,17 +5,24 @@ import Link from 'next/link';
 import { ArrowUpRight } from 'lucide-react';
 import { NODE_CATALOGUE, CATEGORY_STYLES, type CatalogueNode } from './types';
 
+type OnInspect = (node: CatalogueNode, reactFlowType: string) => void;
+
 interface PaletteItemProps {
   node: CatalogueNode;
   reactFlowType: string;
   styles: (typeof CATEGORY_STYLES)[keyof typeof CATEGORY_STYLES];
+  onInspect?: OnInspect;
+  active?: boolean;
+  // Parameters edited in the Properties panel while this item was open.
+  activeParams?: Record<string, string>;
 }
 
-function PaletteItem({ node, reactFlowType, styles }: PaletteItemProps) {
+function PaletteItem({ node, reactFlowType, styles, onInspect, active, activeParams }: PaletteItemProps) {
   const onDragStart = (event: DragEvent<HTMLDivElement>) => {
+    const params = active && activeParams ? activeParams : node.params;
     event.dataTransfer.setData(
       'application/reactflow',
-      JSON.stringify({ ...node, reactFlowType })
+      JSON.stringify({ ...node, params, reactFlowType })
     );
     event.dataTransfer.effectAllowed = 'move';
   };
@@ -24,8 +31,20 @@ function PaletteItem({ node, reactFlowType, styles }: PaletteItemProps) {
     <div
       draggable
       onDragStart={onDragStart}
+      onClick={() => onInspect?.(node, reactFlowType)}
+      role="button"
+      tabIndex={0}
+      aria-pressed={active}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onInspect?.(node, reactFlowType);
+        }
+      }}
+      title="Click to see its details. Drag onto the canvas to add it."
       className={`
         px-3 py-2.5 rounded-lg border cursor-grab active:cursor-grabbing
+        ${active ? 'ring-2 ring-primary/50' : ''}
         transition-all duration-100 select-none
         hover:scale-[1.02] hover:shadow-md active:scale-[0.98]
         ${styles.palette}
@@ -33,21 +52,29 @@ function PaletteItem({ node, reactFlowType, styles }: PaletteItemProps) {
     >
       <div className="flex items-center gap-2">
         <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${styles.dot}`} />
-        <span className="text-xs font-semibold text-foreground truncate">{node.label}</span>
+        <span className="text-sm font-semibold text-foreground truncate">{node.label}</span>
       </div>
-      <p className="text-[10px] text-muted-foreground mt-0.5 ml-3.5 font-mono truncate">{node.nodeType}</p>
+      <p className="text-xs text-muted-foreground mt-0.5 ml-3.5 font-mono truncate">{node.nodeType}</p>
     </div>
   );
 }
 
-export function NodePalette() {
+export function NodePalette({
+  onInspect,
+  activeType,
+  activeParams,
+}: {
+  onInspect?: OnInspect;
+  activeType?: string;
+  activeParams?: Record<string, string>;
+}) {
   return (
-    <aside className="w-56 shrink-0 border-r border-border bg-card flex flex-col overflow-hidden">
+    <aside className="w-64 shrink-0 border-r border-border bg-card flex flex-col overflow-hidden">
       {/* Dashboard button */}
       <div className="px-3 pt-3 shrink-0">
         <Link
           href="/dashboard"
-          className="flex items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-80 w-full"
+          className="flex items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-80 w-full"
         >
           Dashboard
           <ArrowUpRight className="h-3.5 w-3.5" />
@@ -56,8 +83,8 @@ export function NodePalette() {
 
       {/* Header */}
       <div className="px-4 py-3 border-b border-border shrink-0">
-        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Node Palette</p>
-        <p className="text-[10px] text-muted-foreground mt-0.5">Drag onto canvas to add</p>
+        <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Node Palette</p>
+        <p className="text-xs text-muted-foreground mt-0.5">Drag onto the canvas to add. Click for details.</p>
       </div>
 
       {/* Scrollable node list */}
@@ -69,7 +96,7 @@ export function NodePalette() {
               {/* Category header */}
               <div className="flex items-center gap-1.5 mb-2">
                 <span className={`w-2 h-2 rounded-full ${styles.dot}`} />
-                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+                <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
                   {category.category}
                 </p>
               </div>
@@ -82,6 +109,9 @@ export function NodePalette() {
                     node={node}
                     reactFlowType={category.reactFlowType}
                     styles={styles}
+                    onInspect={onInspect}
+                    active={activeType === node.nodeType}
+                    activeParams={activeParams}
                   />
                 ))}
               </div>

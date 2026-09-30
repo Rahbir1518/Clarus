@@ -1,14 +1,23 @@
 "use client";
 
 import { useClerk, useUser } from "@clerk/nextjs";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { ClinicHoursCard } from "@/components/settings/clinic-hours";
 import { PracticeProfileCard } from "@/components/settings/practice-profile";
-import { User, Mail, Shield, LogOut, ExternalLink } from "lucide-react";
+import { User, Mail, Shield, LogOut, ExternalLink, ArrowLeft } from "lucide-react";
 
 export default function SettingsPage() {
   const { user, isSignedIn } = useUser();
   const { signOut } = useClerk();
+  const router = useRouter();
+
+  // Back to wherever the user came from; straight to the dashboard if Settings
+  // was opened directly (a bookmark, a new tab) and there is nothing to go back to.
+  const goBack = () => {
+    if (window.history.length > 1) router.back();
+    else router.push("/dashboard");
+  };
 
   // Clerk models identity providers as linked accounts rather than baking one
   // into the user id the way Auth0's `google-oauth2|...` prefix did.
@@ -17,6 +26,10 @@ export default function SettingsPage() {
   return (
     <div className="space-y-6 max-w-2xl">
       <div>
+        <Button variant="outline" onClick={goBack} className="mb-4 h-10 px-4 text-base font-medium">
+          <ArrowLeft className="size-5" />
+          Back
+        </Button>
         <h1 className="text-2xl font-semibold">Settings</h1>
         <p className="text-sm text-muted-foreground">
           Account and application settings.

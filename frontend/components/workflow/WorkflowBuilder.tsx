@@ -29,7 +29,7 @@ import TriggerNode from './nodes/TriggerNode';
 import ActionNode from './nodes/ActionNode';
 import ConditionalNode from './nodes/ConditionalNode';
 import EndpointNode from './nodes/EndpointNode';
-import { type CatalogueNode } from './types';
+import { NODE_CATALOGUE, type CatalogueNode } from './types';
 import {
   createWorkflow,
   updateWorkflow,
@@ -37,12 +37,12 @@ import {
   getWorkflow,
   executeWorkflow,
   listPatients,
-  createPatient,
 } from '@/services/api';
+import { AddPatientDialog } from '@/components/patients/add-patient-dialog';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import Image from 'next/image';
-import { ArrowUpRight, Undo2, Redo2, MousePointer2, Hand } from 'lucide-react';
+import { Undo2, Redo2, MousePointer2, Hand, Play } from 'lucide-react';
 import dagre from 'dagre';
 import { CmdHoverContext } from './CmdHoverContext';
 
@@ -193,9 +193,11 @@ function FlowContent() {
   const [runStatus, setRunStatus] = useState<'idle' | 'running' | 'success' | 'error'>('idle');
   const [runResult, setRunResult] = useState<any | null>(null);
   const [showAddPatient, setShowAddPatient] = useState(false);
-  const [newPatientName, setNewPatientName] = useState('');
-  const [newPatientPhone, setNewPatientPhone] = useState('');
-  const [addingPatient, setAddingPatient] = useState(false);
+
+  // A palette item clicked for a look, not added. Its parameters can be edited
+  // in the Properties panel, and a drag of that item carries the edits onto the
+  // canvas; dragging is the only way to add a node.
+  const [previewItem, setPreviewItem] = useState<{ node: CatalogueNode; reactFlowType: string } | null>(null);
 
   // ── Auto-load workflow from URL query param ─────────────────────────
   useEffect(() => {
@@ -237,11 +239,34 @@ function FlowContent() {
   // ── Selection ─────────────────────────────────────────────────────────
 
   const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
+    setPreviewItem(null);
     setSelectedNode(node);
   }, []);
 
   const onPaneClick = useCallback(() => {
     setSelectedNode(null);
+    setPreviewItem(null);
+  }, []);
+
+  const onPaletteInspect = useCallback((node: CatalogueNode, reactFlowType: string) => {
+    setSelectedNode(null);
+    setNodes((nds) => nds.map((n) => (n.selected ? { ...n, selected: false } : n)));
+    // Clicking the item already open keeps its edits.
+    setPreviewItem((prev) =>
+      prev?.node.nodeType === node.nodeType ? prev : { node: { ...node, params: { ...node.params } }, reactFlowType }
+    );
+  }, [setNodes]);
+
+  const updatePreviewParams = useCallback((params: Record<string, string>) => {
+    setPreviewItem((prev) => (prev ? { ...prev, node: { ...prev.node, params } } : prev));
+  }, []);
+
+  const resetPreview = useCallback(() => {
+    setPreviewItem((prev) => {
+      if (!prev) return prev;
+      const original = NODE_CATALOGUE.flatMap((c) => c.nodes).find((n) => n.nodeType === prev.node.nodeType);
+      return original ? { ...prev, node: { ...original, params: { ...original.params } } } : prev;
+    });
   }, []);
 
   // ── Cmd+hover to connect nodes ───────────────────────────────────────
@@ -397,6 +422,28 @@ function FlowContent() {
     event.dataTransfer.dropEffect = 'move';
   }, []);
 
+  const addNode = useCallback(
+    (item: CatalogueNode, reactFlowType: string, position: { x: number; y: number }) => {
+      const newNode: Node = {
+        id: newId(),
+        type: reactFlowType,
+        position,
+        selected: true,
+        data: {
+          label: item.label,
+          nodeType: item.nodeType,
+          description: item.description,
+          params: { ...item.params },
+        },
+      };
+
+      setNodes((nds) => nds.map((n) => (n.selected ? { ...n, selected: false } : n)).concat(newNode));
+      setPreviewItem(null);
+      setSelectedNode(newNode);
+    },
+    [setNodes]
+  );
+
   const onDrop = useCallback(
     (event: DragEvent<HTMLDivElement>) => {
       event.preventDefault();
@@ -405,23 +452,9 @@ function FlowContent() {
       if (!raw) return;
 
       const dropped = JSON.parse(raw) as CatalogueNode & { reactFlowType: string };
-      const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-
-      const newNode: Node = {
-        id: newId(),
-        type: dropped.reactFlowType,
-        position,
-        data: {
-          label: dropped.label,
-          nodeType: dropped.nodeType,
-          description: dropped.description,
-          params: { ...dropped.params },
-        },
-      };
-
-      setNodes((nds) => nds.concat(newNode));
+      addNode(dropped, dropped.reactFlowType, screenToFlowPosition({ x: event.clientX, y: event.clientY }));
     },
-    [screenToFlowPosition, setNodes]
+    [screenToFlowPosition, addNode]
   );
 
   // ── Properties panel updates ──────────────────────────────────────────
@@ -472,17 +505,6 @@ function FlowContent() {
     setNodes(layouted);
     setTimeout(() => fitView({ padding: 0.15, duration: 400 }), 50);
   }, [nodes, edges, setNodes, fitView]);
-
-  const exportWorkflow = useCallback(() => {
-    const workflow = { nodes, edges };
-    const blob = new Blob([JSON.stringify(workflow, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `workflow-${Date.now()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }, [nodes, edges]);
 
   // ── Save to Supabase via backend API ──────────────────────────────────
 
@@ -576,8 +598,6 @@ function FlowContent() {
     setRunResult(null);
     setSelectedPatientId(null);
     setShowAddPatient(false);
-    setNewPatientName('');
-    setNewPatientPhone('');
     setLoadingPatients(true);
     try {
       const data = await listPatients(user?.id);
@@ -588,29 +608,6 @@ function FlowContent() {
       setLoadingPatients(false);
     }
   }, [savedWorkflowId, user]);
-
-  const handleAddPatient = useCallback(async () => {
-    if (!newPatientName.trim() || !newPatientPhone.trim()) return;
-    setAddingPatient(true);
-    try {
-      const created = await createPatient({
-        name: newPatientName.trim(),
-        phone: newPatientPhone.trim(),
-        // Ignored by the backend, which uses the token subject. Sent only
-        // because the request type still declares it.
-        doctor_id: user?.id ?? '',
-      });
-      setPatients((prev) => [created, ...prev]);
-      setSelectedPatientId(created.id);
-      setShowAddPatient(false);
-      setNewPatientName('');
-      setNewPatientPhone('');
-    } catch {
-      // ignore — patient still won't show
-    } finally {
-      setAddingPatient(false);
-    }
-  }, [newPatientName, newPatientPhone, user]);
 
   const handleRun = useCallback(async () => {
     if (!savedWorkflowId || !selectedPatientId) return;
@@ -655,10 +652,10 @@ function FlowContent() {
   // A parked run placed a call and is waiting for the post-call webhook, which is
   // a success. Blocked means a safety rule refused something, which is not.
   const RUN_LABELS: Record<string, string> = {
-    completed: '✓ Completed',
-    parked: '⏳ Call placed — waiting for the outcome',
-    blocked: '⛔ Stopped by a safety rule',
-    failed: '✕ Failed',
+    completed: 'Completed',
+    parked: 'Call placed — waiting for the outcome',
+    blocked: 'Stopped by a safety rule',
+    failed: 'Failed',
   };
 
   // ────────────────────────────────────────────────────────────────────────
@@ -667,7 +664,7 @@ function FlowContent() {
     <div className="flex flex-col h-screen bg-background text-foreground">
 
       {/* ── Toolbar ──────────────────────────────────────────────────────── */}
-      <header className="h-12 shrink-0 flex items-center justify-between px-4 border-b border-border bg-card">
+      <header className="h-14 shrink-0 flex items-center justify-between px-4 border-b border-border bg-card">
         <div className="flex items-center gap-2">
           <Link href="/dashboard" className="flex items-center gap-2 font-serif text-2xl tracking-tight text-foreground">
             <Image src="/assets/Clarus.png" alt="Clarus" width={32} height={32} />
@@ -681,10 +678,10 @@ function FlowContent() {
           {/* Node / edge counters */}
           {(nodes.length > 0 || edges.length > 0) && (
             <div className="flex items-center gap-1.5 ml-2">
-              <span className="text-[10px] bg-muted border border-border text-muted-foreground px-2 py-0.5 rounded-full">
+              <span className="text-xs bg-muted border border-border text-muted-foreground px-2 py-0.5 rounded-full">
                 {nodes.length} nodes
               </span>
-              <span className="text-[10px] bg-muted border border-border text-muted-foreground px-2 py-0.5 rounded-full">
+              <span className="text-xs bg-muted border border-border text-muted-foreground px-2 py-0.5 rounded-full">
                 {edges.length} edges
               </span>
             </div>
@@ -730,23 +727,26 @@ function FlowContent() {
         </div>
 
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="xs" onClick={openLoadModal}>
+          <Button variant="outline" size="sm" onClick={openLoadModal}>
             Load Workflow
           </Button>
-          <Button variant="outline" size="xs" onClick={loadExample}>
+          <Button variant="outline" size="sm" onClick={loadExample}>
             Load Example
           </Button>
-          <Button variant="outline" size="xs" onClick={clearCanvas} disabled={nodes.length === 0}>
+          <Button variant="outline" size="sm" onClick={clearCanvas} disabled={nodes.length === 0}>
             Clear
           </Button>
-          <Button variant="outline" size="xs" onClick={exportWorkflow} disabled={nodes.length === 0}>
-            Export JSON
-          </Button>
-          <Button variant="outline" size="xs" onClick={cleanLayout} disabled={nodes.length === 0}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={cleanLayout}
+            disabled={nodes.length === 0}
+            title="Tidy up: arrange the nodes top-to-bottom in the order they connect"
+          >
             Clean
           </Button>
           <Button
-            size="xs"
+            size="sm"
             onClick={handleSaveClick}
             disabled={nodes.length === 0 || saveStatus === 'saving'}
             className={
@@ -760,21 +760,22 @@ function FlowContent() {
             {saveStatus === 'saving'
               ? 'Saving…'
               : saveStatus === 'saved'
-                ? '✓ Saved'
+                ? 'Saved'
                 : saveStatus === 'error'
-                  ? '✕ Error'
+                  ? 'Error'
                   : savedWorkflowId
                     ? 'Update Workflow'
                     : 'Save Workflow'}
           </Button>
           <Button
-            size="xs"
+            size="sm"
             onClick={openRunModal}
             disabled={!savedWorkflowId}
             title={!savedWorkflowId ? 'Save the workflow first' : 'Run this workflow'}
             className="bg-emerald-600 hover:bg-emerald-500 text-white"
           >
-            ▶&nbsp;Run
+            <Play className="size-3.5" />
+            Run
           </Button>
         </div>
       </header>
@@ -784,7 +785,11 @@ function FlowContent() {
       <div className="flex flex-1 overflow-hidden">
 
         {/* Left: Node palette */}
-        <NodePalette />
+        <NodePalette
+          onInspect={onPaletteInspect}
+          activeType={previewItem?.node.nodeType}
+          activeParams={previewItem?.node.params}
+        />
 
         {/* Centre: React Flow canvas */}
         <div
@@ -836,9 +841,9 @@ function FlowContent() {
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <div className="text-center space-y-2">
                 <p className="text-muted-foreground text-sm">
-                  Drag nodes from the palette, or
+                  Drag nodes from the palette onto the canvas, or
                 </p>
-                <p className="text-muted-foreground text-xs">
+                <p className="text-muted-foreground text-sm">
                   click{' '}
                   <span className="text-foreground bg-muted px-1.5 py-0.5 rounded font-mono">
                     Load Workflow
@@ -857,6 +862,9 @@ function FlowContent() {
         {/* Right: Properties panel */}
         <PropertiesPanel
           selectedNode={selectedNode}
+          preview={previewItem}
+          onUpdatePreviewParams={updatePreviewParams}
+          onResetPreview={resetPreview}
           onUpdateParams={updateNodeParams}
           onDeleteNode={deleteNode}
         />
@@ -931,21 +939,21 @@ function FlowContent() {
                       <div className="min-w-0">
                         <p className="text-sm font-semibold text-foreground group-hover:text-primary truncate">{wf.name}</p>
                         {wf.description && (
-                          <p className="text-xs text-muted-foreground mt-0.5 truncate">{wf.description}</p>
+                          <p className="text-sm text-muted-foreground mt-0.5 truncate">{wf.description}</p>
                         )}
                         <div className="flex items-center gap-3 mt-1.5">
-                          <span className="text-[10px] text-muted-foreground">
+                          <span className="text-xs text-muted-foreground">
                             {Array.isArray(wf.nodes) ? wf.nodes.length : 0} nodes
                           </span>
-                          <span className="text-[10px] text-muted-foreground">
+                          <span className="text-xs text-muted-foreground">
                             {Array.isArray(wf.edges) ? wf.edges.length : 0} edges
                           </span>
-                          <span className="text-[10px] text-muted-foreground">
+                          <span className="text-xs text-muted-foreground">
                             {formatDate(wf.created_at)}
                           </span>
                         </div>
                       </div>
-                      <span className={`flex-shrink-0 text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                      <span className={`flex-shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${
                         wf.status === 'ENABLED'
                           ? 'bg-success/10 text-success'
                           : 'bg-muted text-muted-foreground'
@@ -961,6 +969,18 @@ function FlowContent() {
         </div>
       )}
 
+      {showAddPatient && (
+        <AddPatientDialog
+          doctorId={user?.id}
+          onClose={() => setShowAddPatient(false)}
+          onCreated={(created) => {
+            setPatients((prev) => [created, ...prev]);
+            setSelectedPatientId(created.id);
+            setShowAddPatient(false);
+          }}
+        />
+      )}
+
       {/* ── Run Workflow modal ─────────────────────────────────────────── */}
       {showRunModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
@@ -972,7 +992,7 @@ function FlowContent() {
                 className="text-muted-foreground hover:text-foreground text-xl leading-none"
               >×</button>
             </div>
-            <p className="text-xs text-muted-foreground mb-4">
+            <p className="text-sm text-muted-foreground mb-4">
               Workflow: <span className="text-primary font-medium">{workflowName}</span>
             </p>
 
@@ -982,43 +1002,17 @@ function FlowContent() {
                 <div className="flex items-center justify-between mb-2">
                   <label className="text-sm text-muted-foreground font-medium">Select Patient</label>
                   <button
-                    onClick={() => setShowAddPatient((v) => !v)}
-                    className="text-xs text-primary hover:text-primary/80 transition-colors"
+                    onClick={() => setShowAddPatient(true)}
+                    className="text-sm text-primary hover:text-primary/80 transition-colors"
                   >
-                    {showAddPatient ? '− Cancel' : '+ Add Patient'}
+                    + Add Patient
                   </button>
                 </div>
 
-                {showAddPatient && (
-                  <div className="mb-3 rounded-lg border border-border bg-muted p-3 space-y-2">
-                    <input
-                      type="text"
-                      value={newPatientName}
-                      onChange={(e) => setNewPatientName(e.target.value)}
-                      placeholder="Full Name"
-                      className="w-full px-3 py-1.5 rounded-lg bg-background border border-input text-foreground text-xs placeholder-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                    />
-                    <input
-                      type="tel"
-                      value={newPatientPhone}
-                      onChange={(e) => setNewPatientPhone(e.target.value)}
-                      placeholder="Phone (e.g. +1 555 000 0000)"
-                      className="w-full px-3 py-1.5 rounded-lg bg-background border border-input text-foreground text-xs placeholder-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                    />
-                    <Button
-                      size="xs"
-                      onClick={handleAddPatient}
-                      disabled={addingPatient || !newPatientName.trim() || !newPatientPhone.trim()}
-                    >
-                      {addingPatient ? 'Saving…' : 'Create Patient'}
-                    </Button>
-                  </div>
-                )}
-
                 {loadingPatients ? (
-                  <p className="text-xs text-muted-foreground mb-4">Loading patients…</p>
-                ) : patients.length === 0 && !showAddPatient ? (
-                  <p className="text-xs text-muted-foreground mb-4">No patients yet — add one above.</p>
+                  <p className="text-sm text-muted-foreground mb-4">Loading patients…</p>
+                ) : patients.length === 0 ? (
+                  <p className="text-sm text-muted-foreground mb-4">No patients yet — add one above.</p>
                 ) : (
                   <div className="space-y-1.5 max-h-48 overflow-y-auto mb-4 pr-1">
                     {patients.map((p) => (
@@ -1032,7 +1026,7 @@ function FlowContent() {
                         }`}
                       >
                         <span className="font-medium">{p.name}</span>
-                        <span className="text-xs text-muted-foreground ml-2">{p.phone}</span>
+                        <span className="text-sm text-muted-foreground ml-2">{p.phone}</span>
                       </button>
                     ))}
                   </div>
@@ -1048,7 +1042,8 @@ function FlowContent() {
                     onClick={handleRun}
                     className="bg-emerald-600 hover:bg-emerald-500 text-white"
                   >
-                    ▶ Execute
+                    <Play className="size-3.5" />
+                    Execute
                   </Button>
                 </div>
               </>
@@ -1072,10 +1067,10 @@ function FlowContent() {
                   runStatus === 'success' ? 'bg-success/10 border border-success/30' : 'bg-destructive/10 border border-destructive/30'
                 }`}>
                   <span className="text-sm font-semibold">
-                    {RUN_LABELS[runResult.status] ?? (runStatus === 'success' ? '✓ Completed' : '✕ Failed')}
+                    {RUN_LABELS[runResult.status] ?? (runStatus === 'success' ? 'Completed' : 'Failed')}
                   </span>
                   {runResult.call_log_id && (
-                    <span className="text-[10px] text-muted-foreground ml-auto">
+                    <span className="text-xs text-muted-foreground ml-auto">
                       Log&nbsp;ID:&nbsp;{runResult.call_log_id.slice(0, 8)}…
                     </span>
                   )}
@@ -1089,10 +1084,10 @@ function FlowContent() {
                           className="size-2 rounded-full flex-shrink-0"
                           style={{ backgroundColor: stepColor(step.status) }}
                         />
-                        <span className="text-xs font-medium text-foreground">{step.label || step.node_type}</span>
-                        <span className="ml-auto text-[10px] text-muted-foreground capitalize">{step.status}</span>
+                        <span className="text-sm font-medium text-foreground">{step.label || step.node_type}</span>
+                        <span className="ml-auto text-xs text-muted-foreground capitalize">{step.status}</span>
                       </div>
-                      <p className="text-[11px] text-muted-foreground mt-0.5 pl-4">{step.message}</p>
+                      <p className="text-[13px] text-muted-foreground mt-0.5 pl-4">{step.message}</p>
                     </div>
                   ))}
                 </div>

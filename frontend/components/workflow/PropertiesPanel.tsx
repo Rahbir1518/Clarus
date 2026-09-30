@@ -1,7 +1,7 @@
 'use client';
 
 import { type Node } from '@xyflow/react';
-import { CATEGORY_STYLES, type WorkflowNodeData } from './types';
+import { CATEGORY_STYLES, type CatalogueNode, type WorkflowNodeData } from './types';
 
 const NODE_TYPE_CATEGORY: Record<string, keyof typeof CATEGORY_STYLES> = {
   trigger: 'Triggers',
@@ -117,36 +117,57 @@ const FIELD_PLACEHOLDERS: Record<string, string> = {
 
 interface Props {
   selectedNode: Node | null;
+  // A palette item clicked before it is on the canvas. Its parameters can be
+  // edited here, and the edited values are what a drag onto the canvas uses.
+  preview?: { node: CatalogueNode; reactFlowType: string } | null;
   onUpdateParams: (nodeId: string, params: Record<string, string>) => void;
+  onUpdatePreviewParams?: (params: Record<string, string>) => void;
+  onResetPreview?: () => void;
   onDeleteNode: (nodeId: string) => void;
 }
 
-export function PropertiesPanel({ selectedNode, onUpdateParams, onDeleteNode }: Props) {
-  if (!selectedNode) {
+export function PropertiesPanel({
+  selectedNode,
+  preview,
+  onUpdateParams,
+  onUpdatePreviewParams,
+  onResetPreview,
+  onDeleteNode,
+}: Props) {
+  if (!selectedNode && !preview) {
     return (
-      <aside className="w-64 shrink-0 border-l border-border bg-card flex flex-col overflow-hidden">
+      <aside className="w-72 shrink-0 border-l border-border bg-card flex flex-col overflow-hidden">
         <div className="px-4 py-3 border-b border-border shrink-0">
-          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Properties</p>
+          <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Properties</p>
         </div>
         <div className="flex-1 flex flex-col items-center justify-center gap-2 p-6">
           <div className="w-8 h-8 rounded-lg border-2 border-dashed border-border flex items-center justify-center">
-            <span className="text-muted-foreground text-xs">↖</span>
+            <span className="text-muted-foreground text-sm">↖</span>
           </div>
-          <p className="text-[11px] text-muted-foreground text-center leading-relaxed">
-            Click a node to inspect and edit its properties
+          <p className="text-[13px] text-muted-foreground text-center leading-relaxed">
+            Click a node on the canvas to edit its properties, or click one in the palette to see what it does
           </p>
         </div>
       </aside>
     );
   }
 
-  const categoryKey = NODE_TYPE_CATEGORY[selectedNode.type ?? ''] ?? 'Actions';
+  const categoryKey =
+    NODE_TYPE_CATEGORY[(selectedNode ? selectedNode.type : preview?.reactFlowType) ?? ''] ?? 'Actions';
   const styles = CATEGORY_STYLES[categoryKey];
-  const data = selectedNode.data as unknown as WorkflowNodeData;
+  const data: WorkflowNodeData = selectedNode
+    ? (selectedNode.data as unknown as WorkflowNodeData)
+    : {
+        label: preview!.node.label,
+        nodeType: preview!.node.nodeType,
+        description: preview!.node.description,
+        params: preview!.node.params,
+      };
   const params = data.params ?? {};
 
   const handleParamChange = (key: string, value: string) => {
-    onUpdateParams(selectedNode.id, { ...params, [key]: value });
+    if (selectedNode) onUpdateParams(selectedNode.id, { ...params, [key]: value });
+    else onUpdatePreviewParams?.({ ...params, [key]: value });
   };
 
   const renderParamInput = (key: string, value: string) => {
@@ -160,12 +181,12 @@ export function PropertiesPanel({ selectedNode, onUpdateParams, onDeleteNode }: 
     if (selectOptions) {
       return (
         <div key={key}>
-          <label className="block text-[10px] text-muted-foreground font-medium mb-1">{label}</label>
+          <label className="block text-xs text-muted-foreground font-medium mb-1">{label}</label>
           <select
             value={value}
             onChange={(e) => handleParamChange(key, e.target.value)}
             className="
-              w-full text-xs bg-background border border-input rounded-lg
+              w-full text-sm bg-background border border-input rounded-lg
               px-3 py-2 text-foreground
               focus:outline-none focus:border-ring focus:ring-1 focus:ring-ring/30
               transition-colors
@@ -182,13 +203,13 @@ export function PropertiesPanel({ selectedNode, onUpdateParams, onDeleteNode }: 
     if (key === 'message' || key === 'reason' || key === 'notes') {
       return (
         <div key={key}>
-          <label className="block text-[10px] text-muted-foreground font-medium mb-1">{label}</label>
+          <label className="block text-xs text-muted-foreground font-medium mb-1">{label}</label>
           <textarea
             value={value}
             onChange={(e) => handleParamChange(key, e.target.value)}
             rows={3}
             className="
-              w-full text-xs bg-background border border-input rounded-lg
+              w-full text-sm bg-background border border-input rounded-lg
               px-3 py-2 text-foreground font-mono resize-y
               focus:outline-none focus:border-ring focus:ring-1 focus:ring-ring/30
               placeholder-muted-foreground transition-colors
@@ -201,13 +222,13 @@ export function PropertiesPanel({ selectedNode, onUpdateParams, onDeleteNode }: 
 
     return (
       <div key={key}>
-        <label className="block text-[10px] text-muted-foreground font-medium mb-1">{label}</label>
+        <label className="block text-xs text-muted-foreground font-medium mb-1">{label}</label>
         <input
           type={key === 'due_date' ? 'date' : key.includes('threshold') || key === 'days_since_last' ? 'number' : 'text'}
           value={value}
           onChange={(e) => handleParamChange(key, e.target.value)}
           className="
-            w-full text-xs bg-background border border-input rounded-lg
+            w-full text-sm bg-background border border-input rounded-lg
             px-3 py-2 text-foreground font-mono
             focus:outline-none focus:border-ring focus:ring-1 focus:ring-ring/30
             placeholder-muted-foreground transition-colors
@@ -219,32 +240,32 @@ export function PropertiesPanel({ selectedNode, onUpdateParams, onDeleteNode }: 
   };
 
   return (
-    <aside className="w-64 shrink-0 border-l border-border bg-card flex flex-col overflow-hidden">
+    <aside className="w-72 shrink-0 border-l border-border bg-card flex flex-col overflow-hidden">
       {/* Header */}
       <div className="px-4 py-3 border-b border-border shrink-0">
-        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Properties</p>
+        <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Properties</p>
       </div>
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5">
         {/* Type badge */}
         <span
-          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide border ${styles.badge}`}
+          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-bold uppercase tracking-wide border ${styles.badge}`}
         >
-          <span>{styles.icon}</span>
+          <span className={`size-1.5 rounded-full ${styles.dot}`} />
           {styles.label}
         </span>
 
         {/* Label */}
         <div>
-          <p className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1.5">Label</p>
+          <p className="text-xs text-muted-foreground uppercase tracking-widest mb-1.5">Label</p>
           <p className="text-sm font-semibold text-foreground">{data.label}</p>
         </div>
 
         {/* Node Type */}
         <div>
-          <p className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1.5">Node Type</p>
-          <code className="block text-xs font-mono text-primary bg-muted px-3 py-2 rounded-lg break-all">
+          <p className="text-xs text-muted-foreground uppercase tracking-widest mb-1.5">Node Type</p>
+          <code className="block text-sm font-mono text-primary bg-muted px-3 py-2 rounded-lg break-all">
             {data.nodeType}
           </code>
         </div>
@@ -252,15 +273,15 @@ export function PropertiesPanel({ selectedNode, onUpdateParams, onDeleteNode }: 
         {/* Description */}
         {data.description ? (
           <div>
-            <p className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1.5">Description</p>
-            <p className="text-xs text-muted-foreground leading-relaxed">{data.description}</p>
+            <p className="text-xs text-muted-foreground uppercase tracking-widest mb-1.5">Description</p>
+            <p className="text-sm text-muted-foreground leading-relaxed">{data.description}</p>
           </div>
         ) : null}
 
         {/* Parameters */}
         {Object.keys(params).length > 0 && (
           <div>
-            <p className="text-[10px] text-muted-foreground uppercase tracking-widest mb-2.5">Parameters</p>
+            <p className="text-xs text-muted-foreground uppercase tracking-widest mb-2.5">Parameters</p>
             <div className="space-y-3">
               {Object.entries(params).map(([key, value]) => renderParamInput(key, value))}
             </div>
@@ -270,24 +291,47 @@ export function PropertiesPanel({ selectedNode, onUpdateParams, onDeleteNode }: 
         {/* Divider */}
         <div className="border-t border-border" />
 
-        {/* Node ID */}
-        <div>
-          <p className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1">Node ID</p>
-          <code className="text-[10px] text-muted-foreground font-mono break-all">{selectedNode.id}</code>
-        </div>
+        {selectedNode ? (
+          <>
+            {/* Node ID */}
+            <div>
+              <p className="text-xs text-muted-foreground uppercase tracking-widest mb-1">Node ID</p>
+              <code className="text-xs text-muted-foreground font-mono break-all">{selectedNode.id}</code>
+            </div>
 
-        {/* Delete button */}
-        <button
-          onClick={() => onDeleteNode(selectedNode.id)}
-          className="
-            w-full px-3 py-2 rounded-lg border border-destructive/30 text-destructive
-            text-xs font-medium
-            hover:bg-destructive/10 hover:border-destructive/50
-            transition-colors duration-150
-          "
-        >
-          Delete Node
-        </button>
+            {/* Delete button */}
+            <button
+              onClick={() => onDeleteNode(selectedNode.id)}
+              className="
+                w-full px-3 py-2 rounded-lg border border-destructive/30 text-destructive
+                text-sm font-medium
+                hover:bg-destructive/10 hover:border-destructive/50
+                transition-colors duration-150
+              "
+            >
+              Delete Node
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="rounded-lg border border-dashed border-border px-3 py-2.5 text-[13px] text-muted-foreground leading-relaxed">
+              Not on the canvas yet. Drag this node from the palette to add it; it will use the values above.
+            </p>
+            {Object.keys(params).length > 0 && (
+              <button
+                onClick={onResetPreview}
+                className="
+                  w-full px-3 py-2 rounded-lg border border-border text-muted-foreground
+                  text-sm font-medium
+                  hover:bg-muted hover:text-foreground
+                  transition-colors duration-150
+                "
+              >
+                Reset to defaults
+              </button>
+            )}
+          </>
+        )}
       </div>
     </aside>
   );
