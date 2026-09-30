@@ -7,7 +7,13 @@ import pytest
 
 from app.db.tenancy import TenantScope
 from app.ingest.pdf import PdfRejected, parse_pdf
-from tests.pdf_fixtures import LAB_REPORT, make_pdf
+from tests.pdf_fixtures import (
+    LAB_REPORT,
+    TABLE_REPORT,
+    TABLE_REPORT_COLUMNS,
+    make_pdf,
+    make_table_pdf,
+)
 
 ALICE = "user_2alice"
 BOB = "user_2bob"
@@ -84,6 +90,54 @@ def test_flags_come_from_the_range_not_the_lab_marker(report):
         "Haemoglobin": "normal",
         "Potassium": "low",
     }
+
+
+# -- tables drawn cell by cell ---------------------------------------------
+
+
+@pytest.fixture
+def table_report():
+    return parse_pdf(make_table_pdf(TABLE_REPORT, TABLE_REPORT_COLUMNS))
+
+
+def test_a_label_and_its_value_in_separate_cells_are_paired(table_report):
+    assert table_report.patient_info == {
+        "name": "DOE, JANE A.",
+        "dob": "1984-03-17",
+        "sex": "F",
+        "mrn": "MRN-TEST-48213",
+        "phone": "+14165550199",
+    }
+
+
+def test_the_letterhead_phone_is_not_the_patients(table_report):
+    assert "4165550142" not in table_report.patient_info["phone"]
+
+
+def test_one_sided_reference_ranges_are_read(table_report):
+    results = {r["test_name"]: (r["reference_range"], r["flag"]) for r in table_report.lab_results}
+    assert results == {
+        "Cholesterol, Total": ("<5.2", "high"),
+        "HDL Cholesterol": (">1.0", "normal"),
+        "Hematocrit": ("0.36-0.46", "low"),
+    }
+
+
+def test_results_without_a_plain_number_are_reported_not_guessed(table_report):
+    names = {r["test_name"] for r in table_report.lab_results}
+    assert not names & {"Vitamin D, 25-OH", "Ferritin"}
+    assert any("2 result line(s)" in w for w in table_report.warnings)
+
+
+def test_two_different_phones_leave_the_field_empty():
+    doc = parse_pdf(make_pdf(["Name: Karim", "Phone: +8801712345678", "Mobile: +8801812345678"]))
+    assert "phone" not in doc.patient_info
+    assert any("more than one phone number" in w for w in doc.warnings)
+
+
+def test_a_combined_label_with_a_mismatched_value_is_skipped():
+    doc = parse_pdf(make_pdf(["Name: Karim", "DOB / Sex: 1984-03-17"]))
+    assert "dob" not in doc.patient_info and "sex" not in doc.patient_info
 
 
 # -- medications ------------------------------------------------------------

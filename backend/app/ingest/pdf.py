@@ -25,6 +25,9 @@ it expects, so every rule below is written to miss rather than to guess:
     prescription.
   * A date whose day and month are both 12 or under is left empty rather than
     read as either — 03/04/1980 is April in Dhaka and March in Chicago.
+  * A field the document gives two different values for is left empty, and
+    labels above the first patient field (the letterhead, with the lab's own
+    "Tel:") are ignored.
   * A phone number is stored as written. Turning 017... into +88017... is the
     country guess app.engine.policy.assert_dialable refuses to make.
 
@@ -89,13 +92,34 @@ def read_text(data: bytes) -> tuple[str, int]:
         page_count = len(reader.pages)
         if page_count > MAX_PAGES:
             raise PdfRejected(f"PDF has {page_count} pages; the limit is {MAX_PAGES}.")
-        text = "\n".join(page.extract_text() or "" for page in reader.pages)
+        text = "\n".join(_page_text(page) for page in reader.pages)
     except PdfRejected:
         raise
     except (PdfReadError, ValueError, KeyError, TypeError) as exc:
         raise PdfRejected("This PDF could not be read. It may be damaged.") from exc
 
-    return text, page_count
+    return _tidy(text), page_count
+
+
+def _page_text(page: Any) -> str:
+    """The page as it looks, rows kept on one line.
+
+    pypdf's default mode emits text in drawing order, and a lab system that
+    draws a table cell by cell comes out one cell per line: "Patient Name:" on
+    one line, the name on the next, and no result row ever whole. Layout mode
+    places text by position, so a row stays a row and columns are separated by
+    runs of spaces, which _labelled_fields uses as a boundary.
+    """
+    try:
+        return page.extract_text(extraction_mode="layout") or ""
+    except Exception:  # layout mode is newer and less forgiving of odd fonts
+        return page.extract_text() or ""
+
+
+def _tidy(text: str) -> str:
+    """Drop the trailing padding and blank runs layout mode leaves behind."""
+    text = "\n".join(line.rstrip() for line in text.splitlines())
+    return re.sub(r"\n{3,}", "\n\n", text).strip("\n")
 
 
 # ---------------------------------------------------------------------------
@@ -119,7 +143,9 @@ _FIELD_LABELS: Final[dict[str, tuple[str, ...]]] = {
 _STOP_LABELS: Final[tuple[str, ...]] = (
     "Age", "Address", "Email", "Collection Date", "Report Date", "Date",
     "Ordering Physician", "Physician", "Doctor", "Referred By", "Specimen",
-    "Sample", "Visit", "Ward", "Bed", "Blood Group",
+    "Sample", "Visit", "Ward", "Bed", "Blood Group", "Collected", "Received",
+    "Reported", "Accession", "Ordering Provider", "Provider", "Clinic", "Status",
+    "Health Card",
 )
 
 _LABEL_TO_FIELD: Final[dict[str, str | None]] = {
@@ -127,35 +153,92 @@ _LABEL_TO_FIELD: Final[dict[str, str | None]] = {
     **{label.lower(): None for label in _STOP_LABELS},
 }
 
-_LABEL_RE: Final[re.Pattern[str]] = re.compile(
-    r"(?<![A-Za-z])("
-    + "|".join(
-        re.escape(label)
-        for label in sorted(
-            {*(l for ls in _FIELD_LABELS.values() for l in ls), *_STOP_LABELS},
-            key=len,
-            reverse=True,
-        )
+_ANY_LABEL: Final[str] = "|".join(
+    re.escape(label)
+    for label in sorted(
+        {*(l for ls in _FIELD_LABELS.values() for l in ls), *_STOP_LABELS},
+        key=len,
+        reverse=True,
     )
-    + r")\s*[:#]",
+)
+# "Name:", "MRN#", "Health Card #:", and combined labels such as "DOB / Sex:"
+# whose value is written the same way, "1984-03-17 / F".
+_LABEL_RE: Final[re.Pattern[str]] = re.compile(
+    rf"(?<![A-Za-z])((?:{_ANY_LABEL})(?:\s*/\s*(?:{_ANY_LABEL}))*)\s*(?:#\s*:?|:)",
     re.IGNORECASE,
 )
+# A value ends at a column gap or a "|" separator as well as at the next label.
+_VALUE_END_RE: Final[re.Pattern[str]] = re.compile(r"\s{3,}|\s*\|")
+
+# Fields that say whose document this is. Everything above the first of them
+# is the letterhead, where "Tel:" is the lab's number, not the patient's.
+_PATIENT_FIELDS: Final[frozenset[str]] = frozenset({"name", "dob", "mrn"})
 
 
-def _labelled_fields(text: str) -> dict[str, str]:
-    """First non-empty value per field, split on label boundaries per line."""
-    found: dict[str, str] = {}
-    for line in text.splitlines():
-        matches = list(_LABEL_RE.finditer(line))
-        for i, match in enumerate(matches):
-            field_name = _LABEL_TO_FIELD.get(match.group(1).lower())
-            if field_name is None or field_name in found:
+def _line_fields(line: str) -> list[tuple[str | None, str]]:
+    """(field or None for a stop label, value) for each label on the line."""
+    out: list[tuple[str | None, str]] = []
+    matches = list(_LABEL_RE.finditer(line))
+    for i, match in enumerate(matches):
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(line)
+        value = line[match.end():end].strip()
+        value = _VALUE_END_RE.split(value, maxsplit=1)[0].strip(" \t,;")
+        labels = re.split(r"\s*/\s*", match.group(1))
+        # "DOB / Sex: 1984-03-17 / F" — only a spaced slash separates the
+        # parts, since a date may contain unspaced ones. If the counts differ
+        # the pairing is a guess, so none of it is taken.
+        values = re.split(r"\s+/\s+", value) if len(labels) > 1 else [value]
+        if len(values) != len(labels):
+            continue
+        out.extend(
+            (_LABEL_TO_FIELD.get(label.lower()), part.strip())
+            for label, part in zip(labels, values)
+        )
+    return out
+
+
+def _labelled_fields(text: str) -> dict[str, list[str]]:
+    """Every distinct value per field, skipping the letterhead."""
+    lines = [_line_fields(line) for line in text.splitlines()]
+    start = next(
+        (i for i, fields in enumerate(lines) if any(f in _PATIENT_FIELDS for f, _ in fields)),
+        0,
+    )
+    found: dict[str, list[str]] = {}
+    for fields in lines[start:]:
+        for field_name, value in fields:
+            if field_name is None or not value:
                 continue
-            end = matches[i + 1].start() if i + 1 < len(matches) else len(line)
-            value = line[match.end():end].strip(" \t,;|")
-            if value:
-                found[field_name] = value
+            values = found.setdefault(field_name, [])
+            if _same_key(field_name, value) not in {_same_key(field_name, v) for v in values}:
+                values.append(value)
     return found
+
+
+def _same_key(field_name: str, value: str) -> str:
+    if field_name == "phone":
+        return re.sub(r"\D", "", value)
+    return " ".join(value.casefold().split())
+
+
+_FIELD_TITLES: Final[dict[str, str]] = {
+    "name": "name", "dob": "date of birth", "mrn": "record number",
+    "phone": "phone number", "insurance": "insurance", "sex": "sex",
+}
+
+
+def _one_value(
+    found: dict[str, list[str]], field_name: str, warnings: list[str]
+) -> str | None:
+    """The field's value, or None if the document gives two different ones."""
+    values = found.get(field_name, [])
+    if len(values) > 1:
+        warnings.append(
+            f"The document gives more than one {_FIELD_TITLES[field_name]}; "
+            "enter it by hand."
+        )
+        return None
+    return values[0] if values else None
 
 
 _PHONE_CHARS_RE: Final[re.Pattern[str]] = re.compile(r"^\+?[\d\s\-().]{7,20}$")
@@ -201,9 +284,10 @@ def _parse_dob(raw: str) -> tuple[str | None, str | None]:
 
 
 def extract_patient_info(text: str) -> tuple[dict[str, str], list[str]]:
-    fields = _labelled_fields(text)
+    found = _labelled_fields(text)
     info: dict[str, str] = {}
     warnings: list[str] = []
+    fields = {name: _one_value(found, name, warnings) for name in _FIELD_TITLES}
 
     if name := fields.get("name"):
         # Refuse what a name cannot contain rather than requiring what it must:
@@ -256,8 +340,14 @@ _LAB_LINE_RE: Final[re.Pattern[str]] = re.compile(
     r"^\s*(?P<name>[A-Za-z][A-Za-z0-9 ,()/%+\-]{1,60}?)\s+"
     rf"(?P<value>{_NUMBER})\s*(?P<marker>\*|HH|LL|H|L)?\s+"
     r"(?P<unit>[A-Za-zµμ%/^*0-9.]*[A-Za-zµμ%][A-Za-zµμ%/^*0-9.]*)\s+"
-    rf"(?P<low>{_NUMBER})\s*[-–]\s*(?P<high>{_NUMBER})"
+    rf"(?:(?P<low>{_NUMBER})\s*[-–]\s*(?P<high>{_NUMBER})"
+    rf"|(?P<cmp>[<>]=?|[≤≥])\s*(?P<bound>{_NUMBER}))"
     r"(?:\s+(?:H|L|HH|LL|High|Low|Normal|\*))?\s*$"
+)
+# A line that ends in a reference range but did not match above: a result
+# written as "Pending" or "<25". Not read, but not silently dropped either.
+_RANGE_TAIL_RE: Final[re.Pattern[str]] = re.compile(
+    rf"^\s*[A-Za-z].*\s(?:{_NUMBER}\s*[-–]\s*{_NUMBER}|(?:[<>]=?|[≤≥])\s*{_NUMBER})\s*$"
 )
 
 # A name that is really a label means the line is demographics, not a result.
@@ -268,32 +358,59 @@ _NOT_A_TEST: Final[re.Pattern[str]] = re.compile(
 )
 
 
-def extract_lab_results(text: str) -> list[dict[str, Any]]:
+def _range_flag(value: float, match: re.Match[str]) -> tuple[str, str] | None:
+    """(reference range as written, flag), or None if the range is impossible."""
+    if match.group("low") is not None:
+        low, high = float(match.group("low")), float(match.group("high"))
+        if low > high:
+            return None
+        flag = "low" if value < low else "high" if value > high else "normal"
+        return f"{match.group('low')}-{match.group('high')}", flag
+    cmp = {"≤": "<=", "≥": ">="}.get(match.group("cmp"), match.group("cmp"))
+    bound = float(match.group("bound"))
+    if cmp[0] == "<":
+        normal = value < bound or (cmp == "<=" and value == bound)
+        flag = "normal" if normal else "high"
+    else:
+        normal = value > bound or (cmp == ">=" and value == bound)
+        flag = "normal" if normal else "low"
+    return f"{cmp}{match.group('bound')}", flag
+
+
+def extract_lab_results(text: str) -> tuple[list[dict[str, Any]], list[str]]:
     results: list[dict[str, Any]] = []
     seen: set[str] = set()
+    unread = 0
     for line in text.splitlines():
         match = _LAB_LINE_RE.match(line)
         if not match:
+            unread += bool(_RANGE_TAIL_RE.match(line)) and not _NOT_A_TEST.search(line)
             continue
         name = " ".join(match.group("name").split())
         if _NOT_A_TEST.search(name) or name.lower() in seen:
             continue
         value = float(match.group("value"))
-        low, high = float(match.group("low")), float(match.group("high"))
-        if low > high:
+        ranged = _range_flag(value, match)
+        if ranged is None:
             continue
-        flag = "low" if value < low else "high" if value > high else "normal"
+        reference_range, flag = ranged
         results.append(
             {
                 "test_name": name,
                 "value": value,
                 "unit": match.group("unit"),
-                "reference_range": f"{match.group('low')}-{match.group('high')}",
+                "reference_range": reference_range,
                 "flag": flag,
             }
         )
         seen.add(name.lower())
-    return results
+    warnings = []
+    if unread:
+        warnings.append(
+            f"{unread} result line(s) have no plain numeric value (e.g. 'Pending' "
+            "or '<25') and were not imported; check the document."
+        )
+    return results, warnings
 
 
 # ---------------------------------------------------------------------------
@@ -376,6 +493,7 @@ def parse_pdf(data: bytes) -> ExtractedDocument:
         return doc
 
     doc.patient_info, doc.warnings = extract_patient_info(text)
-    doc.lab_results = extract_lab_results(text)
+    doc.lab_results, lab_warnings = extract_lab_results(text)
+    doc.warnings.extend(lab_warnings)
     doc.medications = extract_medications(text)
     return doc
