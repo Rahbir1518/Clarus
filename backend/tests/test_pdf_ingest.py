@@ -150,6 +150,13 @@ def test_medications_come_only_from_the_medications_section(report):
     ]
 
 
+def test_a_blank_line_under_the_medications_heading_does_not_end_it():
+    doc = parse_pdf(
+        make_pdf(["CURRENT MEDICATIONS", "", "1. Metformin 500 mg twice daily", "", "Page 1 of 1"])
+    )
+    assert [m["name"] for m in doc.medications] == ["Metformin"]
+
+
 def test_an_allergy_is_not_recorded_as_a_prescription(report):
     # The old keyword scan found "aspirin" anywhere in the text.
     assert "aspirin" not in {m["name"].lower() for m in report.medications}

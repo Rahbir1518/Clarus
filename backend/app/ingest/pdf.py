@@ -436,6 +436,7 @@ def extract_medications(text: str) -> list[dict[str, str]]:
     medications: list[dict[str, str]] = []
     seen: set[str] = set()
     in_section = False
+    started = False  # a blank line under the heading is spacing, not the end
 
     for line in text.splitlines():
         header = _MED_HEADER_RE.match(line)
@@ -446,8 +447,11 @@ def extract_medications(text: str) -> list[dict[str, str]]:
                 continue
         elif not in_section:
             continue
+        elif not line.strip() and not started:
+            continue
         elif not line.strip() or _HEADER_RE.match(line):
             break
+        started = True
 
         stripped = line.strip()
         entry = stripped.lstrip("•*-–·0123456789.) ").strip()
