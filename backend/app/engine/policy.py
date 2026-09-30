@@ -62,6 +62,29 @@ ALLOWED_CALL_REASONS: Final[dict[str, str]] = {
     "missed_appointment": "একটি অ্যাপয়েন্টমেন্ট যা মিস হয়ে গেছে",
 }
 
+# The same codes, in English, for patients whose number is not Bangladeshi.
+# Same fixed vocabulary — a second language is a second phrase per code, never
+# a free-text path. Keep the keys identical to ALLOWED_CALL_REASONS.
+ALLOWED_CALL_REASONS_EN: Final[dict[str, str]] = {
+    "results_ready": "your recent test results, which we'd like to go over with you",
+    "follow_up": "a follow-up appointment",
+    "annual_check_up": "your annual check-up",
+    "medication_review": "a review of your medications",
+    "appointment_confirmation": "the appointment we've scheduled for you",
+    "missed_appointment": "an appointment that was missed",
+}
+
+_REASONS_BY_LANGUAGE: Final[dict[str, dict[str, str]]] = {
+    "bn": ALLOWED_CALL_REASONS,
+    "en": ALLOWED_CALL_REASONS_EN,
+}
+
+
+def call_language(phone: Any) -> str:
+    """The language a call to `phone` is held in: Bangla for +880, else English."""
+    return "bn" if normalise_phone(phone).startswith("+880") else "en"
+
+
 DEFAULT_REASON_CODE: Final[str] = "results_ready"
 
 # The same codes as ALLOWED_CALL_REASONS, worded for staff rather than spoken.
@@ -110,7 +133,7 @@ CLINICAL_PARAM_NAMES: Final[frozenset[str]] = frozenset(
 )
 
 
-def resolve_call_reason(params: dict[str, str]) -> str:
+def resolve_call_reason(params: dict[str, str], language: str = "bn") -> str:
     """The phrase to speak, or a refusal.
 
     An absent reason_code falls back to the default; an unrecognised one does
@@ -120,7 +143,7 @@ def resolve_call_reason(params: dict[str, str]) -> str:
     told something other than what the author chose.
     """
     code = (params.get("reason_code") or "").strip() or DEFAULT_REASON_CODE
-    phrase = ALLOWED_CALL_REASONS.get(code)
+    phrase = _REASONS_BY_LANGUAGE.get(language, ALLOWED_CALL_REASONS).get(code)
     if phrase is None:
         allowed = ", ".join(sorted(ALLOWED_CALL_REASONS))
         raise PolicyRefusal(
