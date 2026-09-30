@@ -99,6 +99,32 @@ class Settings(BaseSettings):
     # scripts/sync_agent.py reads it, to tell ElevenLabs where the tools live.
     public_api_url: str = ""
 
+    # --- Contact form ------------------------------------------------------
+    # The public site's contact form is emailed to contact_to_email through
+    # this SMTP account. For Gmail: smtp.gmail.com:465 with the account's
+    # address as the username and an App Password (Google Account → Security →
+    # App passwords, needs 2-Step Verification) — never the real password.
+    # The mail is sent *by* this account and carries the visitor's address as
+    # Reply-To: sending "from" a visitor's own address would fail their
+    # provider's SPF/DMARC and land in spam, if it were delivered at all.
+    # Empty username or password turns the form off with a clear 503.
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 465
+    smtp_username: str = ""
+    smtp_password: str = ""
+    contact_to_email: str = "info.cl4rus@gmail.com"
+
+    # Submissions allowed per client IP in each window, and across everyone
+    # per hour — the last bounds what a botnet rotating addresses can send.
+    contact_limit_per_ip_short: int = 3
+    contact_short_window_seconds: int = 600
+    contact_limit_per_ip_daily: int = 10
+    contact_limit_global_hourly: int = 60
+    # Only behind a reverse proxy that sets X-Forwarded-For (Render, Fly,
+    # nginx). Off, the header is ignored — otherwise any client could claim a
+    # fresh IP on every request and walk straight past the per-IP limits.
+    trust_forwarded_for: bool = False
+
     # IANA name, spoken to the agent as {{timezone}} so it can resolve "next
     # Tuesday" correctly. Also what call_logs.timezone should record. A single
     # value for now because every patient is in one country; it becomes a
