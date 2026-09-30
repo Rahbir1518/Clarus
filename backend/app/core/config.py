@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     elevenlabs_api_key: str = ""
     elevenlabs_agent_id: str = ""
     elevenlabs_phone_number_id: str = ""
+    # The English agent, for any patient whose number is not +880.
+    # elevenlabs_agent_id is the Bangla one. Empty means every call uses
+    # elevenlabs_agent_id — see client.agent_for_phone.
+    elevenlabs_agent_id_en: str = ""
 
     # How an outbound call reaches the patient: "twilio" (a phone number
     # imported into ElevenLabs, used with elevenlabs_phone_number_id),

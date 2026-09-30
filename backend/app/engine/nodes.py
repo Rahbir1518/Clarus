@@ -357,7 +357,9 @@ def _call_patient(ctx: RunContext, node: Node) -> Outcome:
 
     # --- what may be said ---
     policy.assert_no_clinical_params(node.params)
-    reason = policy.resolve_call_reason(node.params)
+    reason = policy.resolve_call_reason(
+        node.params, policy.call_language(ctx.patient.get("phone"))
+    )
     policy.assert_not_abnormal(abnormal=ctx.abnormal, reason=ctx.abnormal_reason)
 
     # --- whether to dial ---

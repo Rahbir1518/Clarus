@@ -13,6 +13,7 @@ from typing import Any
 import httpx
 
 from app.core.config import get_settings, require
+from app.engine.policy import call_language
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,19 @@ TRANSPORTS = ("twilio", "whatsapp")
 # and the call is answered from the browser over WebRTC instead — see
 # routes/calls.py. Not in TRANSPORTS: those are the ones place_call can dial.
 WEB_TRANSPORT = "web"
+
+
+def agent_for_phone(phone: Any) -> str | None:
+    """The English agent for a non-+880 number, or None for the default agent.
+
+    None means ELEVENLABS_AGENT_ID (Bangla), resolved by the caller as before —
+    so a missing ELEVENLABS_AGENT_ID_EN changes the language, not whether the
+    call happens.
+    """
+    settings = get_settings()
+    if call_language(phone) == "en" and settings.elevenlabs_agent_id_en:
+        return settings.elevenlabs_agent_id_en
+    return None
 
 
 class ElevenLabsError(RuntimeError):
@@ -161,7 +175,9 @@ class ElevenLabsClient:
         if agent_id is None or agent_phone_number_id is None:
             require("elevenlabs_agent_id", "elevenlabs_phone_number_id")
             settings = get_settings()
-            agent_id = agent_id or settings.elevenlabs_agent_id
+            agent_id = (
+                agent_id or agent_for_phone(to_number) or settings.elevenlabs_agent_id
+            )
             agent_phone_number_id = (
                 agent_phone_number_id or settings.elevenlabs_phone_number_id
             )

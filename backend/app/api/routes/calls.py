@@ -34,8 +34,8 @@ from fastapi import APIRouter, status
 
 from app.api.deps import TenantDep
 from app.core.errors import Conflict
-from app.engine.policy import resolve_call_reason
-from app.integrations.elevenlabs.client import ElevenLabsClient
+from app.engine.policy import call_language, resolve_call_reason
+from app.integrations.elevenlabs.client import ElevenLabsClient, agent_for_phone
 from app.integrations.elevenlabs.variables import build_dynamic_variables
 from app.integrations.elevenlabs.webhook import AWAITING_BROWSER
 from app.schemas.call import (
@@ -81,13 +81,16 @@ def start_web_call(body: StartWebCall, scope: TenantDep) -> dict:
     # anything here is spoken to a patient.
     variables = build_dynamic_variables(
         patient=patient,
-        appointment_reason=resolve_call_reason(body.model_dump()),
+        appointment_reason=resolve_call_reason(
+            body.model_dump(), call_language(patient.get("phone"))
+        ),
         practice=scope.practice_settings(),
     )
 
     # After the insert: a token minted for a call log that failed to write is a
-    # conversation whose outcome has nowhere to go.
-    token = ElevenLabsClient().conversation_token()
+    # conversation whose outcome has nowhere to go. The agent speaks the
+    # patient's language, chosen by their number.
+    token = ElevenLabsClient().conversation_token(agent_for_phone(patient.get("phone")))
 
     logger.info(
         "Web call started: call_log=%s patient=%s", call_log["id"], body.patient_id
@@ -161,7 +164,9 @@ def answer_web_call(call_log_id: str, scope: TenantDep) -> dict:
     ):
         raise Conflict("This call is not waiting to be answered")
 
-    token = ElevenLabsClient().conversation_token()
+    # Same language rule as the run that parked this call used for its reason.
+    patient = scope.get_owned("patients", row["patient_id"]) if row.get("patient_id") else {}
+    token = ElevenLabsClient().conversation_token(agent_for_phone(patient.get("phone")))
 
     logger.info("Web call answered: call_log=%s", call_log_id)
     return {
