@@ -14,6 +14,24 @@ def make_pdf(lines: list[str]) -> bytes:
     stream = "BT /F1 10 Tf 14 TL 40 800 Td\n" + "".join(
         f"({_escape(line)}) Tj T*\n" for line in lines
     ) + "ET"
+    return _wrap(stream)
+
+
+def make_table_pdf(rows: list[list[str]], column_x: list[int]) -> bytes:
+    """Each cell drawn as its own text object, the way many lab systems do.
+
+    pypdf's default extraction reads this one cell per line.
+    """
+    stream = "".join(
+        f"BT /F1 9 Tf {column_x[col]} {800 - 16 * row} Td ({_escape(cell)}) Tj ET\n"
+        for row, cells in enumerate(rows)
+        for col, cell in enumerate(cells)
+        if cell
+    )
+    return _wrap(stream)
+
+
+def _wrap(stream: str) -> bytes:
     objects = [
         "<< /Type /Catalog /Pages 2 0 R >>",
         "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
@@ -56,4 +74,22 @@ LAB_REPORT = [
     "2. Amlodipine 5mg",
     "",
     "Page 1 of 1",
+]
+
+
+# Letterhead, a two-column demographics block and a results table, drawn cell
+# by cell. Mirrors a North American lab report.
+TABLE_REPORT_COLUMNS = [40, 150, 330, 420]
+TABLE_REPORT = [
+    ["Lakeshore Diagnostic Laboratories", "", "Tel: 416-555-0142"],
+    ["Patient Name:", "DOE, JANE A.", "Collected:", "2026-09-22 08:14"],
+    ["DOB / Sex:", "1984-03-17 / F", "Accession:", "LSD-26-0922-7731"],
+    ["MRN:", "MRN-TEST-48213", "Status:", "FINAL"],
+    ["Phone:", "+1 416 555 0199", "", ""],
+    ["Test", "Result", "Units", "Reference Range"],
+    ["Cholesterol, Total", "6.1 H", "mmol/L", "< 5.2"],
+    ["HDL Cholesterol", "1.2", "mmol/L", "> 1.0"],
+    ["Hematocrit", "0.30 L", "L/L", "0.36 - 0.46"],
+    ["Vitamin D, 25-OH", "<25 L", "nmol/L", "> 50"],
+    ["Ferritin", "Pending", "ug/L", "15 - 150"],
 ]
