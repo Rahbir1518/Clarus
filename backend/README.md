@@ -24,6 +24,7 @@ git checkout 91382a9 -- backend                   # restore the whole tree
 | Schema, all 14 tables, in version control | ✅ `migrations/000_initial_schema.sql` |
 | Row Level Security, verified against the live database | ✅ `migrations/001_rls.sql` |
 | Call outcome columns | ✅ `migrations/002_call_outcomes.sql` |
+| Browser-answered calls, clinic hours | ✅ `migrations/003_browser_calls.sql`, `004_practice_hours.sql` |
 | Clerk JWT verification (RS256, JWKS, issuer + authorized party) | ✅ `app/core/security.py` |
 | Tenant isolation that cannot be forgotten | ✅ `app/db/tenancy.py` |
 | Fail-fast configuration | ✅ `app/core/config.py` |
@@ -39,10 +40,14 @@ git checkout 91382a9 -- backend                   # restore the whole tree
 | Workflow engine — graph walk, park at the call, resume from the webhook | ✅ `app/engine/` |
 | AI call safety policy, enforced in code | ✅ [`../docs/ai-call-safety-policy.md`](../docs/ai-call-safety-policy.md), `app/engine/policy.py` |
 | `POST /api/workflows/{id}/execute`, `POST /api/lab-event` | ✅ `app/api/routes/executions.py` |
-| Test suite (225 tests) | ✅ `tests/` |
-| One real call, one real webhook | ⚠️ never exercised — see docs/backend-status.md "Known gaps" |
-| PDF intake, Google Calendar | ❌ not built |
-| Appointments, lab orders, referrals, notifications, reports | ❌ no page calls them — see docs/backend-status.md |
+| Browser calls (`CALL_TRANSPORT=web`): park, answer, resume | ✅ `app/api/routes/calls.py` |
+| Agent calendar tools — free slots, check a proposed time | ✅ `app/api/routes/agent_tools.py`, `app/scheduling/` |
+| Appointments calendar, clinic hours, practice profile | ✅ `app/api/routes/appointments.py`, `practice.py` |
+| PDF intake, local and AI-free | ✅ `app/api/routes/documents.py`, `app/ingest/` |
+| Test suite | ✅ `tests/` — `python -m pytest`; never reads `.env` |
+| A call to a real phone (WhatsApp / Twilio) | ⚠️ built, waiting on a business number |
+| Google Calendar, SMS | ❌ not built |
+| Lab orders, referrals, notifications, reports | ❌ no page calls them — see docs/backend-status.md |
 
 ---
 
@@ -54,24 +59,25 @@ python -m venv .venv
 .venv/Scripts/activate          # Windows;  source .venv/bin/activate elsewhere
 pip install -e ".[dev]"
 
-cp .env.example .env            # then fill in the four required values
+cp .env.example .env            # then fill in — see the root README
 
-uvicorn app.main:app --reload   # http://localhost:8000/docs
-pytest
+python -m uvicorn app.main:app --port 8000 --timeout-graceful-shutdown 2
+python -m pytest
 ```
 
 Or `docker build -t clarus-backend . && docker run -p 8000:8000 --env-file .env clarus-backend`.
 
 ### Database
 
-Apply the schema once, against a fresh Supabase project:
+Apply every migration in order, against a fresh Supabase project (or paste
+each into the SQL editor):
 
 ```bash
-psql "$DATABASE_URL" -f migrations/000_initial_schema.sql
+for f in migrations/00[0-4]_*.sql; do psql "$DATABASE_URL" -f "$f"; done
 ```
 
-Migrations are numbered and additive. Never edit `000` after it has been
-applied anywhere — add `001_*.sql` instead. The reason the old schema was
+Migrations are numbered and additive. Never edit one after it has been
+applied anywhere — add the next number instead. The reason the old schema was
 unrecoverable is that it only ever existed as clicks in a dashboard.
 
 ---
@@ -123,8 +129,10 @@ places a real call with no database involved.
 
 ### The rule that matters
 
-**`agents/appointment_confirmation.yaml` is the source of truth. The dashboard
-is a rendering of it.**
+**`agents/*.yaml` are the source of truth. The dashboard is a rendering of
+them.** The Bangla agent (`appointment_confirmation_bn.yaml`) is the one in use;
+both agents share the calendar tools in `agents/tools.yaml`. Pass `--spec` to
+`sync_agent.py` — without it, it syncs the English spec.
 
 [docs/audit.md §2a](../docs/audit.md) identified the old agent as the project's single
 unrecoverable dependency: its prompt, its six data-collection fields and its
@@ -173,8 +181,9 @@ signatures older than `WEBHOOK_TOLERANCE_SECONDS` (replay), and far-future
 timestamps. A signed payload still cannot reassign a call log to a different
 `doctor_id` or `patient_id`.
 
-Unknown conversation ids get a 204, not a 404 — a 404 would make the endpoint
-an oracle for which conversations exist.
+Unknown conversation ids get a 200, not a 404 — a 404 would make the endpoint
+an oracle for which conversations exist, and ElevenLabs retries anything that is
+not a 200.
 
 ### Two old bugs designed out
 
@@ -208,27 +217,6 @@ event. Everything else goes to `needs_review`.
    sync handlers in a threadpool instead of stalling the event loop.
 5. Copy `tests/test_tenancy.py` and adapt it. A resource without a
    cross-tenant test is not done.
-
----
-
-## What the frontend needs before it can talk to this
-
-Two changes, both outside this directory:
-
-1. The frontend and this backend must point at the **same Clerk instance**.
-   `CLERK_ISSUER` here and `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` there come in
-   matched pairs — development and production instances are separate, with
-   separate signing keys, and crossing them 401s every request.
-
-2. `frontend/services/api.ts` must send `Authorization: Bearer <token>` from
-   Clerk's `getToken()`. Tokens expire after about a minute, so fetch one per
-   request rather than caching it.
-
-3. If `CLERK_AUTHORIZED_PARTIES` is set, the frontend's origin must be in it —
-   Clerk puts that origin in the `azp` claim and this backend checks it.
-
-Until both are done the frontend will receive 401s. That is the correct
-behaviour, not a regression.
 
 ---
 
