@@ -107,7 +107,7 @@ export const NODE_CATALOGUE: NodeCatalogueCategory[] = [
         nodeType: 'schedule_appointment',
         label: 'Schedule Appointment',
         description: 'Book the time the patient agreed to on the call. Runs after Call Patient.',
-        params: { duration_minutes: '30', location: '' },
+        params: { duration_minutes: '30', location: '', reason: '' },
       },
       {
         nodeType: 'send_notification',

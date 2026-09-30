@@ -152,7 +152,10 @@ export function PropertiesPanel({ selectedNode, onUpdateParams, onDeleteNode }: 
   const renderParamInput = (key: string, value: string) => {
     const selectOptions = SELECT_FIELDS[key];
     const label = FIELD_LABELS[key] || key;
-    const placeholder = FIELD_PLACEHOLDERS[key] || `{{${key}}}`;
+    const placeholder =
+      data.nodeType === 'schedule_appointment' && key === 'reason'
+        ? "Reason for the visit. Leave blank to use the call's reason."
+        : FIELD_PLACEHOLDERS[key] || `{{${key}}}`;
 
     if (selectOptions) {
       return (
