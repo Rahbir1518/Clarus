@@ -35,6 +35,11 @@ WHATSAPP_OUTBOUND_CALL_PATH = "/v1/convai/whatsapp/outbound-call"
 
 TRANSPORTS = ("twilio", "whatsapp")
 
+# The transport that dials nothing. A workflow's call_patient node parks the run
+# and the call is answered from the browser over WebRTC instead — see
+# routes/calls.py. Not in TRANSPORTS: those are the ones place_call can dial.
+WEB_TRANSPORT = "web"
+
 
 class ElevenLabsError(RuntimeError):
     """An ElevenLabs API call failed."""
@@ -97,6 +102,37 @@ class ElevenLabsClient:
 
     def get_agent(self, agent_id: str) -> dict:
         return self._request("GET", f"/v1/convai/agents/{agent_id}")
+
+    # -- agent tools --------------------------------------------------------
+    #
+    # Tools live in the workspace and agents reference them by id, so a sync
+    # finds each by name and updates it in place rather than creating a new
+    # copy every run. See scripts/sync_agent.py and agents/tools.yaml.
+
+    def list_tools(self) -> list[dict]:
+        tools: list[dict] = []
+        cursor: str | None = None
+        while True:
+            params: dict[str, Any] = {"page_size": 100}
+            if cursor:
+                params["cursor"] = cursor
+            result = self._request("GET", "/v1/convai/tools", params=params)
+            tools.extend(result.get("tools", []))
+            cursor = result.get("next_cursor")
+            if not result.get("has_more") or not cursor:
+                return tools
+
+    def create_tool(self, tool_config: dict) -> str:
+        result = self._request("POST", "/v1/convai/tools", json={"tool_config": tool_config})
+        tool_id = result.get("id")
+        if not tool_id:
+            raise ElevenLabsError(f"Tool created but no id returned: {result}")
+        return tool_id
+
+    def update_tool(self, tool_id: str, tool_config: dict) -> None:
+        self._request(
+            "PATCH", f"/v1/convai/tools/{tool_id}", json={"tool_config": tool_config}
+        )
 
     def list_phone_numbers(self) -> list[dict]:
         result = self._request("GET", "/v1/convai/phone-numbers")
@@ -229,6 +265,14 @@ class ElevenLabsClient:
         if transport == "twilio":
             return self.outbound_call(
                 to_number=to_number, dynamic_variables=dynamic_variables
+            )
+        if transport == WEB_TRANSPORT:
+            # The engine never gets here on this transport. Anything else that
+            # does — scripts/test_call.py, say — is told why rather than being
+            # given "not one of twilio, whatsapp" for a value that is valid.
+            raise ElevenLabsError(
+                "CALL_TRANSPORT=web places no outbound call; the call is "
+                "answered in the browser. Use twilio or whatsapp to dial a number."
             )
         # Unknown is a refusal, not a default: a typo must not route a patient
         # call over a carrier nobody chose.

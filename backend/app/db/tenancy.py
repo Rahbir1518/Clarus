@@ -111,6 +111,12 @@ WRITABLE_COLUMNS: Final[dict[str, frozenset[str]]] = {
             # could rewrite them could make a call that never reached anyone
             # look like a confirmed appointment.
             "needs_review", "reviewed_at",
+            # What a CALL_TRANSPORT=web call will say, stored by the engine
+            # when it parks so the browser answering later is handed exactly
+            # those values. Written only by app/engine/nodes.py: no route
+            # updates call_logs from a request body, and one that did must not
+            # pass this through — every value in it is spoken to a patient.
+            "call_variables",
         }
     ),
     "appointments": frozenset(
@@ -375,6 +381,80 @@ class TenantScope:
         if not rows:
             raise Conflict("This call was bound to a conversation concurrently")
         return rows[0]
+
+    def practice_settings(self) -> dict:
+        """This practice's opening hours and appointment length.
+
+        Read off the caller's own `doctors` row — the one table outside
+        TENANT_TABLES this scope touches, on the same terms as
+        app/db/doctors.py: the key is the tenant id itself, so there is no
+        other row it could reach. Empty when the row or the columns are unset.
+        """
+        rows = _rows(
+            self._client.table("doctors")
+            .select("name, practice_name, clinic_hours, appointment_minutes")
+            .eq("id", self._doctor_id)
+            .execute()
+        )
+        if not rows:
+            return {}
+        return self._practice(rows[0])
+
+    def _practice(self, row: dict) -> dict:
+        # doctors.name is provisioned as the Clerk subject until the doctor sets
+        # one (see app/db/doctors.py). That placeholder is an id, not a name,
+        # and must never be spoken to a patient.
+        name = row.get("name")
+        if not isinstance(name, str) or not name.strip() or name == self._doctor_id:
+            name = None
+        return {
+            "doctor_name": name,
+            "practice_name": row.get("practice_name") or None,
+            "clinic_hours": row.get("clinic_hours"),
+            "appointment_minutes": row.get("appointment_minutes"),
+        }
+
+    def update_practice_profile(
+        self, *, doctor_name: str, practice_name: str
+    ) -> dict:
+        """Set how the agent names the doctor and the practice on calls.
+
+        Callers pass values validated by app/schemas/practice.py — both are
+        spoken to patients.
+        """
+        rows = _rows(
+            self._client.table("doctors")
+            .update({"name": doctor_name, "practice_name": practice_name})
+            .eq("id", self._doctor_id)
+            .execute()
+        )
+        if not rows:
+            raise NotFound("Doctor")
+        return self._practice(rows[0])
+
+    def update_practice_settings(
+        self, *, clinic_hours: dict, appointment_minutes: int
+    ) -> dict:
+        """Replace this practice's hours and appointment length.
+
+        Callers pass values already validated by app/schemas/practice.py. Two
+        named arguments rather than a dict, so nothing else on the doctors row
+        is writable through here.
+        """
+        rows = _rows(
+            self._client.table("doctors")
+            .update(
+                {
+                    "clinic_hours": clinic_hours,
+                    "appointment_minutes": appointment_minutes,
+                }
+            )
+            .eq("id", self._doctor_id)
+            .execute()
+        )
+        if not rows:
+            raise NotFound("Doctor")
+        return self._practice(rows[0])
 
     def delete_owned(self, table: str, row_id: str) -> None:
         """Soft-delete where the table supports it, hard-delete where it does not.

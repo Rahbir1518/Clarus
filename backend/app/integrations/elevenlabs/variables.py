@@ -28,6 +28,7 @@ def build_dynamic_variables(
     appointment_reason: str,
     callback_number: str = "",
     doctor_name: str | None = None,
+    practice: dict | None = None,
     settings: Settings | None = None,
     today: date | None = None,
 ) -> dict[str, str]:
@@ -38,16 +39,25 @@ def build_dynamic_variables(
     validator here would be a second place for the policy to live and the
     callers are the ones holding the node parameters.
 
+    `practice` is the calling practice's profile (TenantScope.practice_settings):
+    the names the doctor set in Settings. The doctor's name is taken from, in
+    order: `doctor_name` (a workflow's own), the profile, the patient's recorded
+    physician. The practice name from the profile, else PRACTICE_NAME.
+
     Fallbacks are all bland on purpose. "your doctor" is a worse call than the
     doctor's actual name and a much better one than saying "None".
     """
     settings = settings or get_settings()
+    practice = practice or {}
     return {
         "patient_name": str(patient.get("name") or "there"),
         "doctor_name": str(
-            doctor_name or patient.get("primary_physician") or "your doctor"
+            doctor_name
+            or practice.get("doctor_name")
+            or patient.get("primary_physician")
+            or "your doctor"
         ),
-        "practice_name": settings.practice_name,
+        "practice_name": str(practice.get("practice_name") or settings.practice_name),
         "appointment_reason": appointment_reason,
         "callback_number": callback_number or settings.practice_callback_number,
         "timezone": settings.default_timezone,

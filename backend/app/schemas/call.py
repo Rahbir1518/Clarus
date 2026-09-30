@@ -64,6 +64,22 @@ class WebCallStarted(BaseModel):
     dynamic_variables: dict[str, str]
 
 
+class PendingWebCall(BaseModel):
+    """A workflow call parked on CALL_TRANSPORT=web, waiting to be answered.
+
+    Deliberately not the variables themselves. The list says who is waiting;
+    what the agent will say is handed over by the answer route, once, to the
+    browser that is about to speak it.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    call_log_id: str
+    patient_id: str | None = None
+    workflow_id: str | None = None
+    created_at: str | None = None
+
+
 class BindConversation(BaseModel):
     """Report the conversation id the browser received from ElevenLabs."""
 

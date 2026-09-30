@@ -9,12 +9,24 @@
  * call_logs write — without first deciding where a "Call now" button belongs
  * in the product. Once the chain is proven, drop <WebCall /> wherever it makes
  * sense and this page can go.
+ *
+ * It is also where workflow calls are answered while CALL_TRANSPORT=web: a
+ * run that reaches call_patient parks, appears under "Waiting to be answered",
+ * and resumes from the post-call webhook once the conversation ends.
  */
 
 import { useCallback, useEffect, useState } from "react";
 
 import { WebCall } from "@/components/calls/web-call";
-import { listCallLogs, listPatients } from "@/services/api";
+import { useLiveEvents } from "@/hooks/useLiveEvents";
+import {
+  answerWebCall,
+  listCallLogs,
+  listPatients,
+  listPendingWebCalls,
+  startWebCall,
+  type PendingWebCall,
+} from "@/services/api";
 
 type Patient = { id: string; name: string; phone?: string };
 type CallLog = {
@@ -53,6 +65,28 @@ export default function CallTestPage() {
 
   useEffect(refreshLogs, [refreshLogs]);
 
+  const [pending, setPending] = useState<PendingWebCall[]>([]);
+  const refreshPending = useCallback(() => {
+    listPendingWebCalls()
+      .then(setPending)
+      .catch((e: Error) => setError(e.message));
+  }, []);
+
+  useEffect(refreshPending, [refreshPending]);
+
+  // A workflow run that parks, and the webhook that completes a call, both
+  // announce the row on the event stream — so a call waiting to be answered
+  // appears here without a refresh.
+  useLiveEvents((event) => {
+    if (event.name === "call_log.updated") {
+      refreshPending();
+      refreshLogs();
+    }
+  });
+
+  const patientName = (id: string | null) =>
+    patients.find((p) => p.id === id)?.name ?? "Unknown patient";
+
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-8 p-8">
       <header>
@@ -68,6 +102,54 @@ export default function CallTestPage() {
           {error}
         </p>
       )}
+
+      <section className="flex flex-col gap-2">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-medium">Waiting to be answered</h2>
+          <button
+            type="button"
+            onClick={refreshPending}
+            className="text-sm underline"
+          >
+            Refresh
+          </button>
+        </div>
+        {pending.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No workflow calls waiting. With CALL_TRANSPORT=web, running a
+            workflow that reaches Call Patient puts its call here.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {pending.map((call) => (
+              <li key={call.call_log_id} className="rounded-lg border p-4">
+                <div className="mb-3 flex justify-between text-sm">
+                  <span className="font-medium">{patientName(call.patient_id)}</span>
+                  <span className="font-mono text-xs text-muted-foreground">
+                    {call.call_log_id.slice(0, 8)}
+                  </span>
+                </div>
+                <WebCall
+                  // No reason, no name, nothing chosen here: the server hands
+                  // back the variables the workflow run stored when it parked.
+                  begin={() => answerWebCall(call.call_log_id)}
+                  startLabel="Answer"
+                  onEnded={() => {
+                    // The webhook resumes the run a moment after hang-up; the
+                    // event stream also refreshes both lists when it lands.
+                    setTimeout(() => {
+                      refreshPending();
+                      refreshLogs();
+                    }, 4000);
+                  }}
+                />
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <h2 className="text-lg font-medium">Start a call yourself</h2>
 
       <section className="flex flex-col gap-3">
         <label htmlFor="patient" className="text-sm font-medium">
@@ -97,12 +179,11 @@ export default function CallTestPage() {
       {selected && (
         <section className="rounded-lg border p-4">
           <WebCall
-            patientId={selected}
             // Was a hand-written Bangla sentence and a hard-coded callback
             // number. Both are spoken to the patient, so both moved out of the
             // browser's reach: the reason is a code resolved against a fixed
             // vocabulary, the number is PRACTICE_CALLBACK_NUMBER.
-            reasonCode="annual_check_up"
+            begin={() => startWebCall(selected, { reasonCode: "annual_check_up" })}
             onEnded={() => {
               // The webhook lands a moment after the conversation closes.
               setTimeout(refreshLogs, 4000);

@@ -28,6 +28,7 @@ from app.engine import nodes as engine_nodes
 from app.engine import policy
 from app.engine.policy import PolicyRefusal
 from app.integrations.elevenlabs.webhook import (
+    AWAITING_BROWSER,
     RUN_REF_VARIABLE,
     WHATSAPP_PERMISSION_REQUESTED,
     sign_payload,
@@ -1665,3 +1666,341 @@ def test_starting_a_run_tells_open_streams(client, fake_db, auth_header, monkeyp
     ]
 
     assert published == [(ALICE, "call_log.updated", call_log_id)]
+
+
+# ---------------------------------------------------------------------------
+# CALL_TRANSPORT=web: the call is answered in the browser, not dialled
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def browser_calls(
+    monkeypatch: pytest.MonkeyPatch, placed_calls, calling_allowed
+) -> list[dict]:
+    """Every gate open, transport web, and a token stub for the answer route.
+
+    `placed_calls` is still the engine's ElevenLabs stub, so any attempt to dial
+    is recorded — and every test below expects it to stay empty.
+    """
+    from app.api.routes import calls as calls_route
+
+    class _StubToken:
+        def __init__(self, *_a, **_k) -> None:
+            pass
+
+        def conversation_token(self, agent_id=None) -> str:
+            return "tok_stub"
+
+    monkeypatch.setattr(calls_route, "ElevenLabsClient", _StubToken)
+    monkeypatch.setenv("CALL_TRANSPORT", "web")
+    get_settings.cache_clear()
+    return placed_calls
+
+
+def _answer(client, auth_header, call_log_id: str, doctor_id: str = ALICE):
+    return client.post(
+        f"/api/calls/web/{call_log_id}/answer", headers=auth_header(doctor_id)
+    )
+
+
+def _bind(client, auth_header, call_log_id: str, conversation_id: str):
+    return client.post(
+        f"/api/calls/web/{call_log_id}/bind",
+        json={"conversation_id": conversation_id},
+        headers=auth_header(ALICE),
+    )
+
+
+def test_a_web_transport_parks_the_run_and_dials_nothing(
+    client, fake_db, auth_header, browser_calls
+):
+    patient = _patient(fake_db)
+    workflow = _workflow(fake_db, *_call_graph(reason_code="follow_up"))
+
+    started = _run(client, auth_header, workflow["id"], patient["id"])
+    call_log_id = started.json()["call_log_id"]
+
+    assert started.json()["status"] == "parked"
+    assert browser_calls == []
+    assert _step_for(started, "call_patient")["status"] == "parked"
+    # Nothing after the call has run.
+    assert not any(s["node_type"] == "schedule_appointment" for s in _steps(started))
+
+    row = _call_row(fake_db, call_log_id)
+    assert row["status"] == "in_progress"
+    assert row["outcome"] == AWAITING_BROWSER
+    assert row.get("conversation_id") is None
+    variables = row["call_variables"]
+    assert variables["patient_name"] == "রহিম"
+    assert variables["appointment_reason"] == policy.ALLOWED_CALL_REASONS["follow_up"]
+    # Bound before the call ends, so the webhook never needs a run reference.
+    assert RUN_REF_VARIABLE not in variables
+
+
+def test_a_web_transport_needs_no_phone_number(
+    client, fake_db, auth_header, browser_calls
+):
+    """No number is dialled, so neither the E.164 check nor the allowlist is in
+    play — a patient imported without a phone can still be called."""
+    patient = _patient(fake_db, phone="")
+    workflow = _workflow(fake_db, *_call_graph())
+
+    started = _run(client, auth_header, workflow["id"], patient["id"])
+
+    assert started.json()["status"] == "parked"
+    assert browser_calls == []
+
+
+def test_the_kill_switch_still_stops_a_browser_call(
+    client, fake_db, auth_header, browser_calls, monkeypatch
+):
+    monkeypatch.setenv("CALLS_ENABLED", "false")
+    get_settings.cache_clear()
+    patient = _patient(fake_db)
+    workflow = _workflow(fake_db, *_call_graph())
+
+    started = _run(client, auth_header, workflow["id"], patient["id"])
+
+    assert started.json()["status"] == "blocked"
+    assert _call_row(fake_db, started.json()["call_log_id"]).get("outcome") is None
+
+
+def test_calling_hours_still_apply_to_a_browser_call(
+    client, fake_db, auth_header, browser_calls, monkeypatch
+):
+    from zoneinfo import ZoneInfo
+
+    hour = dt.datetime.now(ZoneInfo(get_settings().default_timezone)).hour
+    start = (hour + 1) % 24
+    monkeypatch.setenv("CALLING_HOURS_START", str(start))
+    monkeypatch.setenv("CALLING_HOURS_END", str(start + 1))
+    get_settings.cache_clear()
+    patient = _patient(fake_db)
+    workflow = _workflow(fake_db, *_call_graph())
+
+    started = _run(client, auth_header, workflow["id"], patient["id"])
+
+    assert started.json()["status"] == "blocked"
+
+
+def test_answering_hands_over_exactly_what_the_run_built(
+    client, fake_db, auth_header, browser_calls
+):
+    patient = _patient(fake_db)
+    workflow = _workflow(fake_db, *_call_graph())
+    call_log_id = _run(client, auth_header, workflow["id"], patient["id"]).json()[
+        "call_log_id"
+    ]
+    stored = _call_row(fake_db, call_log_id)["call_variables"]
+
+    # The patient is renamed after the run parked. The call says what the run
+    # decided, not what the row says now.
+    TenantScope(fake_db, ALICE).update_owned(
+        "patients", patient["id"], {"name": "করিম"}
+    )
+    answered = _answer(client, auth_header, call_log_id)
+
+    assert answered.status_code == 200
+    assert answered.json()["call_log_id"] == call_log_id
+    assert answered.json()["token"] == "tok_stub"
+    assert answered.json()["dynamic_variables"] == stored
+    assert answered.json()["dynamic_variables"]["patient_name"] == "রহিম"
+
+
+def test_an_answered_browser_call_resumes_the_workflow(
+    client, fake_db, auth_header, browser_calls
+):
+    """The whole chain: park, answer, bind, webhook, and the appointment the
+    patient agreed to on the call is booked."""
+    patient = _patient(fake_db)
+    workflow = _workflow(fake_db, *_call_graph())
+    call_log_id = _run(client, auth_header, workflow["id"], patient["id"]).json()[
+        "call_log_id"
+    ]
+
+    assert _answer(client, auth_header, call_log_id).status_code == 200
+    assert _bind(client, auth_header, call_log_id, "conv_browser").status_code == 204
+    assert _webhook(client, "conv_browser").status_code == 200
+
+    row = _call_row(fake_db, call_log_id)
+    types = [s["node_type"] for s in row["execution_log"]]
+    assert "run.resumed" in types
+    assert "schedule_appointment" in types
+    assert row["status"] == "completed"
+    assert row["outcome"] == "confirmed"
+    assert row["needs_review"] is False
+    appointment = fake_db.store["appointments"][0]
+    assert appointment["call_log_id"] == call_log_id
+    assert appointment["starts_at"].startswith("2026-08-14T14:30")
+    assert browser_calls == []
+
+
+def test_only_calls_waiting_to_be_answered_are_listed(
+    client, fake_db, auth_header, browser_calls
+):
+    patient = _patient(fake_db)
+    workflow = _workflow(fake_db, *_call_graph())
+    waiting = _run(client, auth_header, workflow["id"], patient["id"]).json()
+    answered = _run(client, auth_header, workflow["id"], patient["id"]).json()
+    _bind(client, auth_header, answered["call_log_id"], "conv_taken")
+
+    # Another practice's parked call.
+    bob_patient = _patient(fake_db, doctor_id=BOB)
+    bob_workflow = _workflow(fake_db, *_call_graph(), doctor_id=BOB)
+    client.post(
+        f"/api/workflows/{bob_workflow['id']}/execute",
+        json={"patient_id": bob_patient["id"]},
+        headers=auth_header(BOB),
+    )
+
+    listed = client.get("/api/calls/web/pending", headers=auth_header(ALICE))
+
+    assert listed.status_code == 200
+    assert [c["call_log_id"] for c in listed.json()] == [waiting["call_log_id"]]
+    assert listed.json()[0]["patient_id"] == patient["id"]
+    assert listed.json()[0]["workflow_id"] == workflow["id"]
+    # Who is waiting, not what will be said.
+    assert "dynamic_variables" not in listed.json()[0]
+
+
+def test_a_call_already_bound_cannot_be_answered_again(
+    client, fake_db, auth_header, browser_calls
+):
+    patient = _patient(fake_db)
+    workflow = _workflow(fake_db, *_call_graph())
+    call_log_id = _run(client, auth_header, workflow["id"], patient["id"]).json()[
+        "call_log_id"
+    ]
+    _bind(client, auth_header, call_log_id, "conv_first")
+
+    assert _answer(client, auth_header, call_log_id).status_code == 409
+
+
+def test_a_run_that_is_not_waiting_cannot_be_answered(
+    client, fake_db, auth_header, browser_calls
+):
+    """A run that placed no call has no variables to hand over."""
+    patient = _patient(fake_db)
+    workflow = _workflow(
+        fake_db,
+        [_node("t1", "lab_results_received"), _node("s1", "send_summary_to_doctor")],
+        [_edge("t1", "s1")],
+    )
+    call_log_id = _run(client, auth_header, workflow["id"], patient["id"]).json()[
+        "call_log_id"
+    ]
+
+    assert _answer(client, auth_header, call_log_id).status_code == 409
+
+
+def test_answering_another_practices_call_is_a_404(
+    client, fake_db, auth_header, browser_calls
+):
+    patient = _patient(fake_db)
+    workflow = _workflow(fake_db, *_call_graph())
+    call_log_id = _run(client, auth_header, workflow["id"], patient["id"]).json()[
+        "call_log_id"
+    ]
+
+    assert _answer(client, auth_header, call_log_id, doctor_id=BOB).status_code == 404
+
+
+def test_the_client_refuses_to_dial_on_the_web_transport(monkeypatch):
+    """Anything outside the engine that reaches place_call on this transport —
+    scripts/test_call.py — is told why, rather than that "web" is unknown."""
+    from app.integrations.elevenlabs.client import ElevenLabsClient, ElevenLabsError
+
+    monkeypatch.setenv("CALL_TRANSPORT", "web")
+    get_settings.cache_clear()
+    try:
+        with pytest.raises(ElevenLabsError, match="answered in the browser"):
+            ElevenLabsClient.place_call(
+                object.__new__(ElevenLabsClient),
+                to_number="+8801700000000",
+                dynamic_variables={},
+            )
+    finally:
+        get_settings.cache_clear()
+
+
+# ---------------------------------------------------------------------------
+# Booking re-checks the calendar after the call
+# ---------------------------------------------------------------------------
+
+
+def _park_and_confirm(client, fake_db, auth_header) -> str:
+    patient = _patient(fake_db)
+    workflow = _workflow(fake_db, *_call_graph())
+    call_log_id = _run(client, auth_header, workflow["id"], patient["id"]).json()[
+        "call_log_id"
+    ]
+    # The webhook's agreed time: 2026-08-14 (a Friday) at 14:30.
+    assert _webhook(client, "conv_1").status_code == 200
+    return call_log_id
+
+
+def test_a_slot_taken_during_the_call_is_not_double_booked(
+    client, fake_db, auth_header, placed_calls, calling_allowed
+):
+    zone = policy.calling_zone()
+    other = _patient(fake_db)
+    TenantScope(fake_db, ALICE).insert_owned(
+        "appointments",
+        {
+            "patient_id": other["id"],
+            "starts_at": dt.datetime(2026, 8, 14, 14, 0, tzinfo=zone).isoformat(),
+            "ends_at": dt.datetime(2026, 8, 14, 15, 0, tzinfo=zone).isoformat(),
+            "status": "scheduled",
+        },
+    )
+
+    call_log_id = _park_and_confirm(client, fake_db, auth_header)
+
+    row = _call_row(fake_db, call_log_id)
+    step = next(s for s in row["execution_log"] if s["node_type"] == "schedule_appointment")
+    assert step["status"] == "blocked"
+    assert "overlaps" in step["message"]
+    assert len(fake_db.store["appointments"]) == 1
+    assert row["needs_review"] is True
+
+
+def test_a_time_outside_the_practices_hours_is_not_booked(
+    client, fake_db, auth_header, placed_calls, calling_allowed
+):
+    # Provisions the doctors row, then closes Fridays.
+    client.put(
+        "/api/practice/settings",
+        json={
+            "clinic_hours": {"mon": [{"start": "09:00", "end": "17:00"}]},
+            "appointment_minutes": 30,
+        },
+        headers=auth_header(ALICE),
+    )
+
+    call_log_id = _park_and_confirm(client, fake_db, auth_header)
+
+    step = next(
+        s
+        for s in _call_row(fake_db, call_log_id)["execution_log"]
+        if s["node_type"] == "schedule_appointment"
+    )
+    assert step["status"] == "blocked"
+    assert "outside clinic hours" in step["message"]
+    assert fake_db.store.get("appointments", []) == []
+
+
+def test_a_free_time_within_hours_is_booked(
+    client, fake_db, auth_header, placed_calls, calling_allowed
+):
+    client.put(
+        "/api/practice/settings",
+        json={
+            "clinic_hours": {"fri": [{"start": "09:00", "end": "17:00"}]},
+            "appointment_minutes": 30,
+        },
+        headers=auth_header(ALICE),
+    )
+
+    _park_and_confirm(client, fake_db, auth_header)
+
+    assert len(fake_db.store["appointments"]) == 1

@@ -33,6 +33,16 @@ os.environ.update(
     }
 )
 
+# The suite never reads backend/.env. It is the developer's own configuration —
+# CALL_TRANSPORT=web, calling hours of 0-24 for a demo — and a test that passes
+# or fails depending on it is testing the laptop, not the code. Every setting a
+# test needs is set above or by the test itself; everything else is the
+# default declared in app/core/config.py.
+from app.core import config as _config  # noqa: E402
+
+_config.Settings.model_config["env_file"] = None
+_config.get_settings.cache_clear()
+
 import jwt  # noqa: E402
 from cryptography.hazmat.primitives.asymmetric import rsa  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
@@ -52,6 +62,28 @@ from app.main import app  # noqa: E402
 class _Result:
     def __init__(self, data: list[dict]) -> None:
         self.data = data
+
+
+# Columns Postgres types as UUID but that could plausibly be handed a Clerk user
+# id ("user_2abc..."), which is text. The fake validates no schema otherwise, so
+# without this a UUID column given a user id passes here and 500s in Postgres —
+# which is exactly how an audit write once broke the practice settings route.
+_UUID_COLUMNS: dict[str, tuple[str, ...]] = {
+    "audit_log": ("entity_id", "patient_id"),
+}
+
+
+def _check_uuid_columns(table: str, row: dict) -> None:
+    for column in _UUID_COLUMNS.get(table, ()):
+        value = row.get(column)
+        if value is None:
+            continue
+        try:
+            uuid.UUID(str(value))
+        except ValueError:
+            raise AssertionError(
+                f"{table}.{column} is a UUID column in Postgres; got {value!r}"
+            ) from None
 
 
 class _Query:
@@ -131,6 +163,7 @@ class _Query:
         if self._op == "insert":
             assert self._payload is not None
             row = dict(self._payload)
+            _check_uuid_columns(self._table, row)
             row.setdefault("id", str(uuid.uuid4()))
             row.setdefault(
                 "created_at", dt.datetime.now(dt.timezone.utc).isoformat()

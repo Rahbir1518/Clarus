@@ -118,6 +118,12 @@ RUN_REF_VARIABLE = "clarus_run_ref"
 # it can be claimed by a run reference.
 WHATSAPP_PERMISSION_REQUESTED = "whatsapp_permission_requested"
 
+# call_logs.outcome while a CALL_TRANSPORT=web call waits for someone to answer
+# it in the browser. Only a row carrying it, and not yet bound to a
+# conversation, can be answered. Overwritten by the real outcome when the
+# webhook arrives, exactly as the WhatsApp marker above is.
+AWAITING_BROWSER = "awaiting_browser"
+
 
 def _run_ref_digest(call_log_id: str, secret: str) -> str:
     message = f"clarus-run-ref:{call_log_id}".encode()

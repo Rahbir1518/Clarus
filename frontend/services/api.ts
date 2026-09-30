@@ -382,6 +382,154 @@ export async function startWebCall(
   return response.json();
 }
 
+// A workflow call parked on CALL_TRANSPORT=web: the run has reached its
+// call_patient node and is waiting for someone to answer it here. Who is
+// waiting, never what will be said — that comes back from answerWebCall.
+export type PendingWebCall = {
+  call_log_id: string;
+  patient_id: string | null;
+  workflow_id: string | null;
+  created_at: string | null;
+};
+
+export async function listPendingWebCalls(): Promise<PendingWebCall[]> {
+  const response = await fetch(`${API_URL}/api/calls/web/pending`);
+  if (!response.ok) throw new Error(`Could not list waiting calls (${response.status})`);
+  return response.json();
+}
+
+// Answer a parked workflow call. The variables are the ones the run stored
+// when it parked; there is no body, so nothing here can change them. After
+// this it is the ordinary web call path: bind on connect, and the webhook
+// resumes the run.
+export async function answerWebCall(callLogId: string): Promise<WebCallStarted> {
+  const response = await fetch(`${API_URL}/api/calls/web/${callLogId}/answer`, {
+    method: 'POST',
+  });
+  // 409: already answered, or not a call that is waiting.
+  if (!response.ok) throw new Error(`Could not answer the call (${response.status})`);
+  return response.json();
+}
+
+// ---------------------------------------------------------------------------
+// Practice settings and the calendar
+//
+// Opening hours and appointment length are the practice's own, kept until the
+// doctor changes them. The agent reads them — and the appointments below —
+// during a call to offer only times that are actually free.
+// ---------------------------------------------------------------------------
+
+// The reason the backend gave, e.g. "... overlaps an existing appointment."
+async function errorMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const body = await response.json();
+    const details = body?.error?.details;
+    if (Array.isArray(details) && details.length > 0) {
+      return details.map((d: { msg?: string }) => d.msg).filter(Boolean).join('; ');
+    }
+    return body?.error?.message || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export type Weekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
+export type TimeRange = { start: string; end: string };
+export type ClinicHours = Record<Weekday, TimeRange[]>;
+
+export type PracticeSettings = {
+  // null until the practice saves hours; until then the agent offers no times.
+  clinic_hours: ClinicHours | null;
+  appointment_minutes: number;
+  // The zone the hours are read in. Set by the deployment, not editable here.
+  timezone: string;
+  // How the agent names the doctor and the practice on calls. null until set.
+  doctor_name: string | null;
+  practice_name: string | null;
+};
+
+export async function updatePracticeProfile(
+  doctorName: string,
+  practiceName: string,
+): Promise<PracticeSettings> {
+  const response = await fetch(`${API_URL}/api/practice/profile`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ doctor_name: doctorName, practice_name: practiceName }),
+  });
+  if (!response.ok) throw new Error(await errorMessage(response, 'Could not save the practice profile'));
+  return response.json();
+}
+
+export async function getPracticeSettings(): Promise<PracticeSettings> {
+  const response = await fetch(`${API_URL}/api/practice/settings`);
+  if (!response.ok) throw new Error(await errorMessage(response, 'Could not load practice settings'));
+  return response.json();
+}
+
+export async function updatePracticeSettings(
+  clinicHours: ClinicHours,
+  appointmentMinutes: number,
+): Promise<PracticeSettings> {
+  const response = await fetch(`${API_URL}/api/practice/settings`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ clinic_hours: clinicHours, appointment_minutes: appointmentMinutes }),
+  });
+  if (!response.ok) throw new Error(await errorMessage(response, 'Could not save practice settings'));
+  return response.json();
+}
+
+export type Appointment = {
+  id: string;
+  patient_id: string | null;
+  workflow_id: string | null;
+  call_log_id: string | null;
+  starts_at: string;
+  ends_at: string | null;
+  status: string;
+  location: string | null;
+  reason: string | null;
+  notes: string | null;
+  created_at: string | null;
+};
+
+export async function listAppointments(): Promise<Appointment[]> {
+  const response = await fetch(`${API_URL}/api/appointments`);
+  if (!response.ok) throw new Error(await errorMessage(response, 'Could not load appointments'));
+  return response.json();
+}
+
+export async function createAppointment(input: {
+  patientId: string;
+  date: string; // YYYY-MM-DD, practice local
+  time: string; // HH:MM, practice local
+  durationMinutes?: number;
+  reason?: string;
+}): Promise<Appointment> {
+  const response = await fetch(`${API_URL}/api/appointments`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      patient_id: input.patientId,
+      date: input.date,
+      time: input.time,
+      duration_minutes: input.durationMinutes,
+      reason: input.reason || undefined,
+    }),
+  });
+  if (!response.ok) throw new Error(await errorMessage(response, 'Could not add the appointment'));
+  return response.json();
+}
+
+export async function cancelAppointment(appointmentId: string): Promise<Appointment> {
+  const response = await fetch(`${API_URL}/api/appointments/${appointmentId}/cancel`, {
+    method: 'POST',
+  });
+  if (!response.ok) throw new Error(await errorMessage(response, 'Could not cancel the appointment'));
+  return response.json();
+}
+
 export async function bindCall(callLogId: string, conversationId: string): Promise<void> {
   const response = await fetch(`${API_URL}/api/calls/web/${callLogId}/bind`, {
     method: 'POST',
