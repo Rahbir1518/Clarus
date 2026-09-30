@@ -5,14 +5,18 @@
     python scripts/sync_agent.py
     python scripts/sync_agent.py --agent-id agent_abc123
     python scripts/sync_agent.py --create     # new agent even if one is configured
-    python scripts/sync_agent.py --spec agents/appointment_confirmation.yaml
+    python scripts/sync_agent.py --spec agents/appointment_confirmation_bn.yaml
 
 The YAML file is the source of truth. Editing the agent in the ElevenLabs
 dashboard works, but the next sync overwrites it — that is the point. The old
 project lost its agent configuration because the dashboard was the only copy.
 
-After a create, put the printed agent id into your .env as
-ELEVENLABS_AGENT_ID so the call path can find it.
+Each spec names the setting that holds its agent's id (`agent_id_setting:`):
+the English agent is ELEVENLABS_TWILIO_AGENT_ID, the Bangla one
+ELEVENLABS_AGENT_ID. With that setting empty the sync creates the agent; after
+a create, put the printed id into your .env under that name. An update whose
+live agent speaks a different language from the spec is refused, since that is
+one agent about to be overwritten with the other.
 
 A spec with `tools_file:` also registers the webhook tools that file declares
 (agents/tools.yaml) — found by name and updated in place — and attaches them to
@@ -47,11 +51,24 @@ from app.integrations.elevenlabs.tools import (  # noqa: E402
 DEFAULT_SPEC = Path(__file__).resolve().parent.parent / "agents" / "appointment_confirmation.yaml"
 
 
-def _configured_agent_id() -> str:
+DEFAULT_AGENT_ID_SETTING = "elevenlabs_agent_id"
+
+
+def _configured_agent_id(setting: str) -> str:
+    # From the settings, not only os.environ: backend/.env is read by
+    # pydantic-settings and never reaches the process environment, so
+    # os.environ alone missed it and every run created a new agent.
     try:
-        return get_settings().elevenlabs_agent_id
+        from_settings = getattr(get_settings(), setting, "")
     except Exception:  # noqa: BLE001 - a half-filled .env should not stop --dry-run
-        return ""
+        from_settings = ""
+    return os.environ.get(setting.upper()) or from_settings
+
+
+def _language(definition: dict) -> str | None:
+    return ((definition.get("conversation_config") or {}).get("agent") or {}).get(
+        "language"
+    )
 
 
 def load_spec(path: Path) -> dict:
@@ -138,12 +155,8 @@ def main() -> int:
     parser.add_argument("--spec", type=Path, default=DEFAULT_SPEC)
     parser.add_argument(
         "--agent-id",
-        # From the settings, not os.environ: backend/.env is read by
-        # pydantic-settings and never reaches the process environment, so
-        # os.environ alone missed it and every run created a new agent.
-        default=os.environ.get("ELEVENLABS_AGENT_ID") or _configured_agent_id(),
-        help="Update this agent instead of creating a new one. Defaults to "
-        "ELEVENLABS_AGENT_ID.",
+        help="Update this agent instead of creating a new one. Defaults to the "
+        "setting the spec's agent_id_setting names.",
     )
     parser.add_argument(
         "--create",
@@ -156,10 +169,14 @@ def main() -> int:
         help="Print the payload that would be sent and exit.",
     )
     args = parser.parse_args()
-    if args.create:
-        args.agent_id = ""
 
     spec = load_spec(args.spec)
+    # Ours, not an ElevenLabs field: popped before the spec is sent.
+    id_setting = spec.pop("agent_id_setting", DEFAULT_AGENT_ID_SETTING)
+    if args.create:
+        args.agent_id = ""
+    elif args.agent_id is None:
+        args.agent_id = _configured_agent_id(id_setting)
     wanted = declared_fields(spec)
     try:
         tool_configs = load_tool_configs(spec, args.spec)
@@ -169,6 +186,7 @@ def main() -> int:
 
     print(f"Spec:              {args.spec}")
     print(f"Agent name:        {spec.get('name')}")
+    print(f"Agent:             {args.agent_id or '(new)'}  [{id_setting.upper()}]")
     print(f"Data collection:   {', '.join(sorted(wanted)) or '(none)'}")
     print(f"Tools:             {', '.join(c['name'] for c in tool_configs) or '(none)'}")
     for config in tool_configs:
@@ -199,6 +217,16 @@ def main() -> int:
             spec["conversation_config"]["agent"]["prompt"]["tool_ids"] = tool_ids
 
         if args.agent_id:
+            live = _language(client.get_agent(args.agent_id))
+            if live and live != _language(spec):
+                print(
+                    f"\nERROR: agent {args.agent_id} speaks {live!r} and this spec "
+                    f"is {_language(spec)!r}. Updating it would replace one agent "
+                    f"with the other. Set {id_setting.upper()} to the right agent, "
+                    f"or pass --create.",
+                    file=sys.stderr,
+                )
+                return 2
             print(f"\nUpdating agent {args.agent_id} ...")
             client.update_agent(args.agent_id, spec)
             agent_id = args.agent_id
@@ -256,7 +284,7 @@ def main() -> int:
         return 1
 
     print("\nAll declared fields are present on the server.")
-    print(f"\nAdd to your .env:\n  ELEVENLABS_AGENT_ID={agent_id}")
+    print(f"\nAdd to your .env:\n  {id_setting.upper()}={agent_id}")
     return 0
 
 

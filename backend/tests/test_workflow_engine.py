@@ -62,6 +62,7 @@ class _StubElevenLabs:
             {
                 "to_number": to_number,
                 "dynamic_variables": dynamic_variables,
+                "transport": _kw.get("transport"),
                 # Snapshotted at the moment of dialling, which is the only point
                 # at which "was the row created first?" can be answered.
                 "call_logs_at_dial_time": [
@@ -1323,6 +1324,61 @@ def test_a_twilio_call_carries_no_run_reference(
     _run(client, auth_header, workflow["id"], patient["id"])
 
     assert RUN_REF_VARIABLE not in placed_calls[0]["dynamic_variables"]
+
+
+# ---------------------------------------------------------------------------
+# CALL_TRANSPORT=auto: the carrier follows the patient's number
+# ---------------------------------------------------------------------------
+
+US_NUMBER = "+12125550100"
+
+
+@pytest.fixture
+def auto_transport(monkeypatch: pytest.MonkeyPatch, calling_allowed):
+    monkeypatch.setenv("CALL_TRANSPORT", "auto")
+    monkeypatch.setenv("CALL_ALLOWED_NUMBERS", f"{ALLOWED_NUMBER},{US_NUMBER},+15550100")
+    get_settings.cache_clear()
+
+
+def test_auto_sends_a_non_us_number_over_whatsapp_with_its_run_reference(
+    client, fake_db, auth_header, placed_calls, auto_transport
+):
+    """The run reference is what lets a deferred WhatsApp call find its run.
+    Choosing WhatsApp per call must not lose it, as reading CALL_TRANSPORT
+    (which says "auto", not "whatsapp") would."""
+    patient = _patient(fake_db)
+    workflow = _workflow(fake_db, *_call_graph())
+
+    _run(client, auth_header, workflow["id"], patient["id"])
+
+    (call,) = placed_calls
+    assert call["transport"] == "whatsapp"
+    assert RUN_REF_VARIABLE in call["dynamic_variables"]
+
+
+def test_auto_sends_a_us_number_over_twilio(
+    client, fake_db, auth_header, placed_calls, auto_transport
+):
+    patient = _patient(fake_db, phone=US_NUMBER)
+    workflow = _workflow(fake_db, *_call_graph())
+
+    _run(client, auth_header, workflow["id"], patient["id"])
+
+    (call,) = placed_calls
+    assert call["transport"] == "twilio"
+    assert RUN_REF_VARIABLE not in call["dynamic_variables"]
+
+
+def test_auto_dials_nothing_when_the_country_cannot_be_told(
+    client, fake_db, auth_header, placed_calls, auto_transport
+):
+    patient = _patient(fake_db, phone="+15550100")
+    workflow = _workflow(fake_db, *_call_graph())
+
+    started = _run(client, auth_header, workflow["id"], patient["id"])
+
+    assert started.json()["status"] == "failed"
+    assert placed_calls == []
 
 
 def test_an_invalid_duration_blocks_rather_than_losing_the_booking(

@@ -59,15 +59,28 @@ class Settings(BaseSettings):
     elevenlabs_api_key: str = ""
     elevenlabs_agent_id: str = ""
     elevenlabs_phone_number_id: str = ""
+    # The agent for calls over Twilio, which under CALL_TRANSPORT=auto means
+    # the US and Canada: the English agent (agents/appointment_confirmation.yaml)
+    # while ELEVENLABS_AGENT_ID stays the Bangla one for WhatsApp and the
+    # browser. Empty means Twilio calls use ELEVENLABS_AGENT_ID, as before.
+    elevenlabs_twilio_agent_id: str = ""
 
     # How an outbound call reaches the patient: "twilio" (a phone number
     # imported into ElevenLabs, used with elevenlabs_phone_number_id),
     # "whatsapp" (a WhatsApp Business number connected in ElevenLabs), or "web"
     # (nothing is dialled — the run parks and the call is answered in the
-    # browser, for when there is no number to call from). Same agent, same
-    # dynamic variables, same post-call webhook every way — see
-    # ElevenLabsClient.place_call and routes/calls.py.
+    # browser, for when there is no number to call from), or "auto" (per call,
+    # by the country of the patient's number: twilio_regions go over Twilio,
+    # every other country over WhatsApp). Same agent, same dynamic variables,
+    # same post-call webhook every way — see resolve_transport and
+    # ElevenLabsClient.place_call in app/integrations/elevenlabs/client.py.
     call_transport: str = "twilio"
+
+    # CALL_TRANSPORT=auto only. Comma-separated ISO 3166 region codes whose
+    # numbers are dialled over Twilio. Regions, not dialling codes: "+1" is
+    # also Jamaica, the Bahamas and Puerto Rico, none of which this includes
+    # unless named here (Puerto Rico is "PR").
+    twilio_regions: str = "US,CA"
 
     # WhatsApp. The phone number *id* from the ElevenLabs WhatsApp page
     # (menu -> Copy phone number ID), not the number itself.
@@ -178,6 +191,10 @@ class Settings(BaseSettings):
     @property
     def call_transport_name(self) -> str:
         return self.call_transport.strip().lower()
+
+    @property
+    def twilio_region_list(self) -> list[str]:
+        return [r.strip().upper() for r in self.twilio_regions.split(",") if r.strip()]
 
     @property
     def is_production(self) -> bool:

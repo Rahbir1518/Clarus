@@ -26,6 +26,10 @@ dependencies = [
     "pypdf>=5.0",
     # FastAPI needs it to accept multipart uploads at all.
     "python-multipart>=0.0.18",
+    # CALL_TRANSPORT=auto picks a carrier by the patient number's country. A
+    # "+1" prefix is not enough: it is shared by the US, Canada and some twenty
+    # Caribbean countries, which only the area-code tables in here tell apart.
+    "phonenumbers>=8.13",
 ]
 
 [project.optional-dependencies]

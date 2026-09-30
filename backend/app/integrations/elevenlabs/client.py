@@ -11,8 +11,9 @@ import logging
 from typing import Any
 
 import httpx
+import phonenumbers
 
-from app.core.config import get_settings, require
+from app.core.config import Settings, get_settings, require
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,10 @@ TRANSPORTS = ("twilio", "whatsapp")
 # and the call is answered from the browser over WebRTC instead — see
 # routes/calls.py. Not in TRANSPORTS: those are the ones place_call can dial.
 WEB_TRANSPORT = "web"
+
+# Not a transport either: a rule for choosing one per call, by the country of
+# the number being dialled. See resolve_transport.
+AUTO_TRANSPORT = "auto"
 
 
 class ElevenLabsError(RuntimeError):
@@ -158,13 +163,18 @@ class ElevenLabsClient:
         Returns the raw response, which carries `conversation_id` and `callSid`
         when the call is successfully queued.
         """
-        if agent_id is None or agent_phone_number_id is None:
-            require("elevenlabs_agent_id", "elevenlabs_phone_number_id")
-            settings = get_settings()
-            agent_id = agent_id or settings.elevenlabs_agent_id
-            agent_phone_number_id = (
-                agent_phone_number_id or settings.elevenlabs_phone_number_id
-            )
+        settings = get_settings()
+        if not agent_id:
+            # The Twilio agent if one is configured: a different language from
+            # the WhatsApp one, since under CALL_TRANSPORT=auto Twilio carries
+            # the US and Canada. See Settings.elevenlabs_twilio_agent_id.
+            agent_id = settings.elevenlabs_twilio_agent_id
+            if not agent_id:
+                require("elevenlabs_agent_id")
+                agent_id = settings.elevenlabs_agent_id
+        if not agent_phone_number_id:
+            require("elevenlabs_phone_number_id")
+            agent_phone_number_id = settings.elevenlabs_phone_number_id
 
         payload = {
             "agent_id": agent_id,
@@ -251,13 +261,23 @@ class ElevenLabsClient:
         )
         return result
 
-    def place_call(self, *, to_number: str, dynamic_variables: dict[str, Any]) -> dict:
-        """Place an outbound call over whichever transport CALL_TRANSPORT names.
+    def place_call(
+        self,
+        *,
+        to_number: str,
+        dynamic_variables: dict[str, Any],
+        transport: str | None = None,
+    ) -> dict:
+        """Place an outbound call over `transport`, or resolve_transport's choice.
 
         The one place that knows there is more than one. Callers get back a
-        response carrying `conversation_id`, whichever was used.
+        response carrying `conversation_id`, whichever was used. A caller that
+        acts on the choice itself — the call_patient node, which treats a
+        WhatsApp call differently — resolves it first and passes it in, so the
+        transport it prepared for is the one that dials.
         """
-        transport = get_settings().call_transport_name
+        if transport is None:
+            transport = resolve_transport(to_number)
         if transport == "whatsapp":
             return self.whatsapp_outbound_call(
                 to_number=to_number, dynamic_variables=dynamic_variables
@@ -277,7 +297,8 @@ class ElevenLabsClient:
         # Unknown is a refusal, not a default: a typo must not route a patient
         # call over a carrier nobody chose.
         raise ElevenLabsError(
-            f"CALL_TRANSPORT={transport!r} is not one of {', '.join(TRANSPORTS)}."
+            f"CALL_TRANSPORT={transport!r} is not one of "
+            f"{', '.join((*TRANSPORTS, WEB_TRANSPORT, AUTO_TRANSPORT))}."
         )
 
     def conversation_token(self, agent_id: str | None = None) -> str:
@@ -306,6 +327,43 @@ class ElevenLabsClient:
     def get_conversation(self, conversation_id: str) -> dict:
         """Fetch a conversation, including transcript and analysis once done."""
         return self._request("GET", f"/v1/convai/conversations/{conversation_id}")
+
+
+def resolve_transport(to_number: str | None, settings: Settings | None = None) -> str:
+    """The transport that will carry a call to `to_number`.
+
+    CALL_TRANSPORT itself, unless it is "auto": then Twilio for a number in one
+    of TWILIO_REGIONS, WhatsApp for any other country.
+
+    Chosen by the number, not by where a request came from. Every call here is
+    outbound, and whoever starts one — a doctor pressing Run, a lab feed, the
+    webhook resuming a run — is not the patient, so no request IP says where
+    the patient is. The number does, and it is what the carrier has to reach.
+
+    A number whose country cannot be determined is refused rather than sent
+    down the WhatsApp branch as "some other country": that is the same guess
+    about where a number lives that policy.assert_dialable refuses to make.
+    """
+    settings = settings or get_settings()
+    configured = settings.call_transport_name
+    if configured != AUTO_TRANSPORT:
+        return configured
+    region = phone_region(to_number or "")
+    if region is None:
+        raise ElevenLabsError(
+            f"CALL_TRANSPORT=auto cannot tell which country {to_number!r} is "
+            "in, so it cannot choose between Twilio and WhatsApp."
+        )
+    return "twilio" if region in settings.twilio_region_list else "whatsapp"
+
+
+def phone_region(e164: str) -> str | None:
+    """The ISO 3166 region of an international number ("US", "BD"), or None."""
+    try:
+        parsed = phonenumbers.parse(e164.strip(), None)
+    except phonenumbers.NumberParseException:
+        return None
+    return phonenumbers.region_code_for_number(parsed)
 
 
 def whatsapp_user_id(e164: str) -> str:

@@ -34,6 +34,7 @@ from app.integrations.elevenlabs.client import (  # noqa: E402
     TRANSPORTS,
     ElevenLabsClient,
     ElevenLabsError,
+    resolve_transport,
 )
 from app.integrations.elevenlabs.webhook import parse_post_call_payload  # noqa: E402
 
@@ -72,7 +73,7 @@ def main() -> int:
         "entry of CALL_ALLOWED_NUMBERS, and must be in that list.",
     )
     parser.add_argument(
-        "--transport", choices=TRANSPORTS, help="Defaults to CALL_TRANSPORT."
+        "--transport", choices=TRANSPORTS, help="Defaults to CALL_TRANSPORT, resolved by the number's country if auto.",
     )
     parser.add_argument("--conversation", help="Fetch a finished conversation instead")
     parser.add_argument("--patient-name", default="Alex Kim")
@@ -146,7 +147,7 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 2
-        transport = args.transport or settings.call_transport_name
+        transport = args.transport or resolve_transport(to, settings)
 
         variables = build_dynamic_variables(args)
         print("Dynamic variables:")

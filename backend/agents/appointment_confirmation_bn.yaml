@@ -15,6 +15,9 @@
 
 name: Clarus — Appointment Confirmation (বাংলা)
 
+# Which setting holds this agent's id; see the note in the English file.
+agent_id_setting: elevenlabs_agent_id
+
 # The calendar tools, shared with the other agent. See agents/tools.yaml; the
 # sync registers them and attaches them by id.
 tools_file: tools.yaml
@@ -196,6 +199,9 @@ platform_settings:
   # says what the agent should do; these end the call when it is being pushed
   # somewhere else regardless.
   guardrails:
+    # The API discriminates guardrail schemas on this and rejects the block
+    # without it (422 union_tag_not_found). "1" is what live agents hold.
+    version: "1"
     prompt_injection:
       is_enabled: true
     focus:

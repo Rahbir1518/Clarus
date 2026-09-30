@@ -41,6 +41,7 @@ from app.integrations.elevenlabs.client import (
     WEB_TRANSPORT,
     ElevenLabsClient,
     ElevenLabsError,
+    resolve_transport,
 )
 from app.integrations.elevenlabs.variables import build_dynamic_variables
 from app.scheduling.practice import load_schedule
@@ -393,7 +394,16 @@ def _call_patient(ctx: RunContext, node: Node) -> Outcome:
     if web:
         return _await_browser(ctx, variables, reason)
 
-    whatsapp = ctx.settings.call_transport_name == "whatsapp"
+    # Resolved here, not left to place_call: with CALL_TRANSPORT=auto the
+    # carrier depends on this patient's number, and a WhatsApp call needs the
+    # run reference below. Reading the setting instead would leave an
+    # auto-routed WhatsApp call without one, and its deferred outcome with
+    # nowhere to go.
+    try:
+        transport = resolve_transport(phone, ctx.settings)
+    except ElevenLabsError as exc:
+        return failed(f"The call was not placed: {exc}")
+    whatsapp = transport == "whatsapp"
     if whatsapp and ctx.settings.elevenlabs_webhook_secret:
         # Lets the webhook find this run if the call is deferred behind a
         # permission request. See run references in webhook.py.
@@ -412,10 +422,10 @@ def _call_patient(ctx: RunContext, node: Node) -> Outcome:
     )
 
     try:
-        # Twilio or WhatsApp, per CALL_TRANSPORT. Every gate above applies to
-        # both; nothing below cares which was used.
+        # Twilio or WhatsApp, as resolved above. Every gate above applies to
+        # both; nothing below cares which was used beyond the WhatsApp case.
         response = ElevenLabsClient().place_call(
-            to_number=phone, dynamic_variables=variables
+            to_number=phone, dynamic_variables=variables, transport=transport
         )
     except ElevenLabsError as exc:
         return failed(f"The call was not placed: {exc}")
@@ -467,8 +477,8 @@ def _call_patient(ctx: RunContext, node: Node) -> Outcome:
     ctx.call_placed = True
     return Outcome(
         PARKED,
-        f"Calling {phone} about {reason}. The run resumes when the post-call "
-        f"webhook arrives.",
+        f"Calling {phone} over {transport} about {reason}. The run resumes when "
+        f"the post-call webhook arrives.",
         entity={"table": "call_logs", "id": str(ctx.call_log_id)},
     )
 
