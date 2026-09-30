@@ -1,28 +1,66 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
+import { API_URL } from "@/services/api";
+
+// Sent to our own backend (POST /api/contact), which emails the message to the
+// Clarus inbox with the visitor as Reply-To. The backend rate-limits, and
+// quietly drops anything that fills the hidden honeypot field or arrives
+// faster than a person could type — see backend/app/api/routes/contact.py.
 export default function ContactPage() {
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const shownAt = useRef(0);
+
+  useEffect(() => {
+    shownAt.current = Date.now();
+  }, []);
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (submitting) return;
     setSubmitting(true);
     setError(null);
-    const form = e.currentTarget;
-    const data = new FormData(form);
+    const data = new FormData(e.currentTarget);
+    const field = (name: string) => String(data.get(name) ?? "").trim();
     try {
-      const res = await fetch("https://api.web3forms.com/submit", {
+      // Plain fetch, not the authenticated one in services/api: visitors to
+      // the public site have no session.
+      const res = await fetch(`${API_URL}/api/contact`, {
         method: "POST",
-        body: data,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: field("name"),
+          email: field("email"),
+          clinic: field("clinic"),
+          role: field("role"),
+          interest: field("interest"),
+          message: field("message"),
+          hp_extra: field("hp_extra"),
+          elapsed_ms: shownAt.current ? Date.now() - shownAt.current : 0,
+        }),
       });
-      const json = await res.json();
-      if (json.success) {
+      if (res.ok) {
         setSubmitted(true);
+        return;
+      }
+      const body = await res.json().catch(() => null);
+      const details = body?.error?.details;
+      if (res.status === 422 && Array.isArray(details) && details.length > 0) {
+        const fieldNames: Record<string, string> = { name: "Name", email: "Email", clinic: "Clinic", message: "Message" };
+        setError(
+          details
+            .map((d: { loc?: string[]; msg?: string }) => {
+              const name = fieldNames[d.loc?.[d.loc.length - 1] ?? ""];
+              const msg = (d.msg ?? "").replace(/^Value error, /, "");
+              return name ? `${name}: ${msg}` : msg;
+            })
+            .join(" "),
+        );
       } else {
-        setError(json.message || "Something went wrong. Please try again.");
+        setError(body?.error?.message || "Something went wrong. Please try again.");
       }
     } catch {
       setError("Network error. Please try again.");
@@ -56,7 +94,7 @@ export default function ContactPage() {
       <section className="pb-28 md:pb-40">
         <div className="mx-auto max-w-7xl px-6">
           <div className="grid gap-16 md:grid-cols-[1fr_320px]">
-            {/* Web3Forms form */}
+            {/* Contact form */}
             <div>
               {submitted ? (
                 <div className="rounded-2xl border border-border p-10">
@@ -71,18 +109,16 @@ export default function ContactPage() {
               ) : (
                 <form
                   onSubmit={handleSubmit}
-                  className="space-y-6"
+                  className="relative space-y-6"
                 >
-                  <input
-                    type="hidden"
-                    name="access_key"
-                    value="f3934f91-6ffe-4a8f-9a61-075cb8044676"
-                  />
-                  <input
-                    type="hidden"
-                    name="subject"
-                    value="New Contact Form Submission — Clarus"
-                  />
+                  {/* Honeypot: off-screen and out of the tab order, so only
+                      a bot filling every field ever fills it. Its name and
+                      label must mean nothing to browser autofill — Chrome
+                      filled a field called "website" for real visitors. */}
+                  <div aria-hidden="true" className="absolute -left-[10000px] top-auto h-px w-px overflow-hidden">
+                    <label htmlFor="hp_extra">Leave this empty</label>
+                    <input id="hp_extra" name="hp_extra" type="text" tabIndex={-1} autoComplete="off" data-lpignore="true" data-1p-ignore defaultValue="" />
+                  </div>
 
                   <div className="grid gap-6 md:grid-cols-2">
                     <div>
@@ -97,6 +133,8 @@ export default function ContactPage() {
                         name="name"
                         type="text"
                         required
+                        maxLength={100}
+                        autoComplete="name"
                         placeholder="Dr. Priya Nair"
                         className="w-full rounded-lg border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/20"
                       />
@@ -113,6 +151,8 @@ export default function ContactPage() {
                         name="email"
                         type="email"
                         required
+                        maxLength={254}
+                        autoComplete="email"
                         placeholder="priya@lakeviewclinic.com"
                         className="w-full rounded-lg border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/20"
                       />
@@ -130,6 +170,8 @@ export default function ContactPage() {
                       id="clinic"
                       name="clinic"
                       type="text"
+                      maxLength={150}
+                      autoComplete="organization"
                       placeholder="Lakeview Family Clinic"
                       className="w-full rounded-lg border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/20"
                     />
@@ -188,13 +230,15 @@ export default function ContactPage() {
                       name="message"
                       rows={5}
                       required
+                      minLength={10}
+                      maxLength={5000}
                       placeholder="Tell us about your clinic and what you're looking for..."
                       className="w-full resize-none rounded-lg border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/20"
                     />
                   </div>
 
                   {error && (
-                    <p className="text-sm text-red-500">{error}</p>
+                    <p className="text-sm text-red-500" role="alert">{error}</p>
                   )}
 
                   <button

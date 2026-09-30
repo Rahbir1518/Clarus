@@ -175,6 +175,7 @@ export async function createPatient(payload: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
+  if (!response.ok) throw new Error(await errorMessage(response, 'Could not add the patient'));
   return response.json();
 }
 

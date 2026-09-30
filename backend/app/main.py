@@ -16,6 +16,7 @@ from app.api.routes import (
     call_logs,
     calls,
     clinical,
+    contact,
     documents,
     events,
     executions,
@@ -97,3 +98,5 @@ app.include_router(events.router, prefix="/api")
 app.include_router(webhooks.router, prefix="/api")
 # Shared-secret and live-conversation authenticated. See routes/agent_tools.py.
 app.include_router(agent_tools.router, prefix="/api")
+# Public: the marketing site's contact form. Rate limited; see routes/contact.py.
+app.include_router(contact.router, prefix="/api")

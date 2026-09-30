@@ -10,7 +10,7 @@ export default function ActionNode({ data, selected }: NodeProps) {
   return (
     <div
       className={`
-        min-w-[192px] rounded-xl border-2 px-4 py-3
+        min-w-[220px] rounded-xl border-2 px-4 py-3
         bg-card
         transition-all duration-150
         ${selected
@@ -28,27 +28,27 @@ export default function ActionNode({ data, selected }: NodeProps) {
 
       {/* Header */}
       <div className="flex items-center gap-2 mb-2">
-        <span className="text-purple-600 text-base leading-none">⚙</span>
-        <span className="text-[10px] text-purple-600 uppercase tracking-widest font-bold">Action</span>
+        <span className="size-2 rounded-full bg-purple-500" />
+        <span className="text-xs text-purple-600 uppercase tracking-widest font-bold">Action</span>
       </div>
 
       {/* Label */}
       <p className="text-sm font-semibold text-foreground leading-tight">{d.label}</p>
 
       {/* Node type */}
-      <p className="text-[11px] text-purple-400 font-mono mt-1 truncate">{d.nodeType}</p>
+      <p className="text-[13px] text-purple-400 font-mono mt-1 truncate">{d.nodeType}</p>
 
       {/* Param preview */}
       {paramKeys.length > 0 && (
         <div className="mt-2 pt-2 border-t border-purple-200 space-y-0.5">
           {paramKeys.slice(0, 2).map((key) => (
-            <div key={key} className="flex items-center gap-1.5 text-[10px] font-mono text-purple-400">
+            <div key={key} className="flex items-center gap-1.5 text-xs font-mono text-purple-400">
               <span className="text-purple-300">→</span>
               <span className="truncate">{key}</span>
             </div>
           ))}
           {paramKeys.length > 2 && (
-            <p className="text-[10px] text-purple-300 pl-3.5">+{paramKeys.length - 2} more</p>
+            <p className="text-xs text-purple-300 pl-3.5">+{paramKeys.length - 2} more</p>
           )}
         </div>
       )}

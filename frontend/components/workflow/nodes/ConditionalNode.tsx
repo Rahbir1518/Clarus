@@ -69,27 +69,27 @@ export default function ConditionalNode({ data, selected }: NodeProps) {
 
       {/* Header */}
       <div className="relative flex items-center gap-2 mb-2">
-        <span className="text-amber-600 text-base leading-none font-bold">◇</span>
-        <span className="text-[10px] text-amber-600 uppercase tracking-widest font-bold">Condition</span>
+        <span className="size-2 rounded-full bg-amber-500" />
+        <span className="text-xs text-amber-600 uppercase tracking-widest font-bold">Condition</span>
       </div>
 
       {/* Label */}
       <p className="relative text-sm font-semibold text-foreground leading-tight">{d.label}</p>
 
       {/* Node type */}
-      <p className="relative text-[11px] text-amber-400 font-mono mt-1 truncate">{d.nodeType}</p>
+      <p className="relative text-[13px] text-amber-400 font-mono mt-1 truncate">{d.nodeType}</p>
 
       {/* Condition expression preview */}
       {condition && (
         <div className="relative mt-2 pt-2 border-t border-amber-200">
-          <code className="text-[10px] text-amber-500 font-mono break-all">{condition}</code>
+          <code className="text-xs text-amber-500 font-mono break-all">{condition}</code>
         </div>
       )}
 
       {/* True / False labels above handles */}
       <div className="relative flex justify-between mt-3 px-1">
-        <span className="text-[10px] font-bold text-emerald-600">✓ True</span>
-        <span className="text-[10px] font-bold text-red-500">✗ False</span>
+        <span className="text-xs font-bold text-emerald-600">True</span>
+        <span className="text-xs font-bold text-red-500">False</span>
       </div>
 
       {/* Two source handles: True (left) and False (right) */}
