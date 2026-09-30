@@ -64,6 +64,25 @@ ALLOWED_CALL_REASONS: Final[dict[str, str]] = {
 
 DEFAULT_REASON_CODE: Final[str] = "results_ready"
 
+# The same codes as ALLOWED_CALL_REASONS, worded for staff rather than spoken.
+# This is what an appointment booked off the back of a call records as its
+# reason, so the calendar says why the patient is coming without anyone having
+# typed it. Same vocabulary, so nothing clinical can reach it either.
+CALL_REASON_LABELS: Final[dict[str, str]] = {
+    "results_ready": "Discuss recent test results",
+    "follow_up": "Follow-up appointment",
+    "annual_check_up": "Annual check-up",
+    "medication_review": "Medication review",
+    "appointment_confirmation": "Scheduled appointment",
+    "missed_appointment": "Rebook missed appointment",
+}
+
+
+def call_reason_label(params: dict[str, str]) -> str | None:
+    """The staff-facing label for a call node's reason, or None if unknown."""
+    code = (params.get("reason_code") or "").strip() or DEFAULT_REASON_CODE
+    return CALL_REASON_LABELS.get(code)
+
 # Parameter names that mean somebody is trying to put clinical content into a
 # call. Presence with a non-empty value is refused outright — see the policy
 # document on why the value is not simply dropped.

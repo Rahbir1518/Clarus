@@ -14,9 +14,13 @@
  * objects, which would silently shift a day for anyone west of it.
  *
  * The week starts on Saturday, as the clinic's does (and as Settings lists it).
+ * A sideways wheel or trackpad swipe (or Shift + wheel) anywhere on the
+ * calendar, or a plain wheel over the week bar and day headers, moves between
+ * weeks.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useUser } from "@clerk/nextjs";
 import { Bot, ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -42,6 +46,10 @@ const WEEKDAY_KEYS: Weekday[] = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"
 const WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 // Saturday.
 const WEEK_STARTS_ON = 6;
+// Wheel travel needed to move one week, and the pause before the next move,
+// so one trackpad swipe or wheel flick is one week rather than several.
+const WHEEL_STEP = 60;
+const WHEEL_COOLDOWN_MS = 400;
 
 // ---------------------------------------------------------------------------
 // Dates in the practice's zone
@@ -118,18 +126,31 @@ export default function AppointmentsPage() {
   const [showCancelled, setShowCancelled] = useState(false);
   const [selected, setSelected] = useState<Appointment | null>(null);
   const [draft, setDraft] = useState<{ date: string; time: string } | null>(null);
+  const { user } = useUser();
+  const doctorId = user?.id;
+
+  const loadPatients = useCallback(() => {
+    listPatients(doctorId)
+      .then((rows: Patient[]) => setPatients(Array.isArray(rows) ? rows : []))
+      .catch(() => setPatients([]));
+  }, [doctorId]);
 
   const refresh = useCallback(() => {
     listAppointments()
-      .then(setAppointments)
+      .then((rows) => {
+        setError(null);
+        setAppointments(rows);
+      })
       .catch((e: Error) => setError(e.message));
   }, []);
 
+  // Wait for Clerk: the API layer only has a session token once it has loaded,
+  // and a request sent before then is refused — which is how agent-booked
+  // appointments ended up showing "Unknown patient".
   useEffect(() => {
+    if (!doctorId) return;
     refresh();
-    listPatients()
-      .then((rows: Patient[]) => setPatients(Array.isArray(rows) ? rows : []))
-      .catch(() => setPatients([]));
+    loadPatients();
     getPracticeSettings()
       .then((s) => {
         setTimezone(s.timezone);
@@ -139,11 +160,25 @@ export default function AppointmentsPage() {
       .catch(() => setTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone));
     const tick = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(tick);
-  }, [refresh]);
+  }, [doctorId, refresh, loadPatients]);
 
   useLiveEvents((event) => {
     if (event.name === "appointment.updated" || event.name === "call_log.updated") refresh();
   });
+
+  // A booking can name a patient added after this page loaded (a PDF import,
+  // another tab). Fetch the list again rather than label them unknown.
+  const missingPatient = appointments.some(
+    (a) => a.patient_id && !patients.some((p) => p.id === a.patient_id),
+  );
+  const lastPatientReload = useRef("");
+  useEffect(() => {
+    if (!doctorId || !missingPatient) return;
+    const key = appointments.map((a) => a.patient_id).join(",");
+    if (lastPatientReload.current === key) return;
+    lastPatientReload.current = key;
+    loadPatients();
+  }, [doctorId, missingPatient, appointments, loadPatients]);
 
   const today = timezone ? zoned(now, timezone).date : null;
   const shownWeek = week ?? (today ? weekStart(today) : null);
@@ -218,6 +253,45 @@ export default function AppointmentsPage() {
     setDraft({ date: day, time: hhmm(snapped) });
   };
 
+  // Wheel navigation between weeks. Attached by hand because React's onWheel is
+  // passive and cannot stop the page from scrolling sideways as well.
+  const calendarRef = useRef<HTMLDivElement>(null);
+  const shownWeekRef = useRef(shownWeek);
+  useEffect(() => {
+    shownWeekRef.current = shownWeek;
+  }, [shownWeek]);
+  useEffect(() => {
+    const el = calendarRef.current;
+    if (!el) return;
+    let travel = 0;
+    let lastMove = 0;
+    const onWheel = (e: WheelEvent) => {
+      const target = e.target as HTMLElement | null;
+      const overHeader = Boolean(target?.closest("[data-week-wheel]"));
+      const sideways = Math.abs(e.deltaX) > Math.abs(e.deltaY);
+      const dx = sideways ? e.deltaX : e.shiftKey || overHeader ? e.deltaY : 0;
+      if (dx === 0) return;
+      // A grid wider than the screen scrolls sideways first; weeks change once
+      // it is at its edge.
+      const scroller = el.querySelector<HTMLElement>("[data-calendar-scroll]");
+      if (scroller && !overHeader) {
+        const max = scroller.scrollWidth - scroller.clientWidth;
+        if (max > 1 && ((dx < 0 && scroller.scrollLeft > 0) || (dx > 0 && scroller.scrollLeft < max - 1))) return;
+      }
+      e.preventDefault();
+      const now = Date.now();
+      if (now - lastMove < WHEEL_COOLDOWN_MS) return;
+      travel += dx;
+      if (Math.abs(travel) < WHEEL_STEP) return;
+      const current = shownWeekRef.current;
+      if (current) setWeek(addDays(current, travel > 0 ? 7 : -7));
+      travel = 0;
+      lastMove = now;
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [timezone]);
+
   const weekTitle =
     days.length > 0 ? `${dayLabel(days[0], "short")} – ${dayLabel(days[6], "short")} ${days[6].slice(0, 4)}` : "";
 
@@ -252,7 +326,8 @@ export default function AppointmentsPage() {
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div ref={calendarRef} className="space-y-4">
+      <div className="flex items-center gap-2" data-week-wheel title="Scroll here to change week">
         <Button variant="outline" size="sm" aria-label="Previous week" onClick={() => shownWeek && setWeek(addDays(shownWeek, -7))}>
           <ChevronLeft className="size-4" />
         </Button>
@@ -299,6 +374,7 @@ export default function AppointmentsPage() {
 
       {selected && (
         <AppointmentDetails
+          key={selected.id}
           appointment={selected}
           patientName={patientName(selected.patient_id)}
           timezone={timezone ?? undefined}
@@ -315,10 +391,10 @@ export default function AppointmentsPage() {
           Loading calendar…
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-border bg-card">
+        <div data-calendar-scroll className="overflow-x-auto rounded-xl border border-border bg-card">
           <div className="min-w-[760px]">
             {/* Day headers */}
-            <div className="grid grid-cols-[56px_repeat(7,1fr)] border-b border-border">
+            <div data-week-wheel className="grid grid-cols-[56px_repeat(7,1fr)] border-b border-border">
               <div />
               {days.map((day) => {
                 const isToday = day === today;
@@ -413,13 +489,14 @@ export default function AppointmentsPage() {
                             left: `calc(${(a.lane / a.lanes) * 100}% + 2px)`,
                             width: `calc(${100 / a.lanes}% - 4px)`,
                           }}
-                          title={`${hhmm(a.start)}–${hhmm(a.end)} ${patientName(a.patient_id)}`}
+                          title={`${hhmm(a.start)}–${hhmm(a.end)} ${patientName(a.patient_id)}${a.reason ? ` · ${a.reason}` : ""}`}
                         >
                           <span className="flex items-center gap-1 font-semibold">
                             {byAgent && <Bot className="size-3 shrink-0" />}
                             {hhmm(a.start)}
                           </span>
                           {height >= 34 && <span className="block truncate">{patientName(a.patient_id)}</span>}
+                          {height >= 48 && a.reason && <span className="block truncate opacity-90">{a.reason}</span>}
                         </button>
                       );
                     })}
@@ -429,6 +506,7 @@ export default function AppointmentsPage() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }
@@ -485,9 +563,13 @@ function AppointmentDetails({
             {fmt(appointment.starts_at)}
             {appointment.ends_at && <> – {new Date(appointment.ends_at).toLocaleTimeString("en-GB", { timeZone: timezone, hour: "2-digit", minute: "2-digit", hour12: false })}</>}
           </p>
+          <p className="text-sm">
+            <span className="font-medium">Reason for visit: </span>
+            {appointment.reason || <span className="text-muted-foreground">Not recorded</span>}
+          </p>
           <p className="text-xs text-muted-foreground">
-            {appointment.call_log_id ? "Booked by the AI agent on a call" : "Added by hand"}
-            {appointment.reason ? ` · ${appointment.reason}` : ""} · <span className="capitalize">{appointment.status.replace("_", " ")}</span>
+            {appointment.call_log_id ? "Booked by the AI agent on a call" : "Added by hand"} ·{" "}
+            <span className="capitalize">{appointment.status.replace("_", " ")}</span>
           </p>
           {error && (
             <p className="text-sm text-destructive" role="alert">
@@ -539,6 +621,10 @@ function AppointmentForm({
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!reason.trim()) {
+      setError("Enter the reason for the visit.");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -547,7 +633,7 @@ function AppointmentForm({
         date,
         time,
         durationMinutes: minutes === "" ? undefined : minutes,
-        reason,
+        reason: reason.trim(),
       });
       onCreated();
     } catch (err) {
@@ -617,9 +703,11 @@ function AppointmentForm({
         </label>
       </div>
       <label className="flex flex-col gap-1 text-xs font-medium">
-        Reason (optional, for staff only)
+        Reason for visit (for staff only)
         <input
+          required
           maxLength={200}
+          placeholder="e.g. Follow-up on blood test results"
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           className="rounded-md border bg-background px-2 py-1.5 text-sm font-normal"

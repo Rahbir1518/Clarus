@@ -598,7 +598,7 @@ def _schedule_appointment(ctx: RunContext, node: Node) -> Outcome:
             # it read back to them, which is what `confirmed` means here.
             "status": "confirmed",
             "location": node.param("location") or None,
-            "reason": node.param("reason") or None,
+            "reason": node.param("reason") or _call_reason_before(ctx, node),
         },
     )
     return ok(
@@ -606,6 +606,37 @@ def _schedule_appointment(ctx: RunContext, node: Node) -> Outcome:
         f"({ctx.settings.default_timezone}), {minutes} minutes",
         entity={"table": "appointments", "id": str(appointment.get("id"))},
     )
+
+
+def _call_reason_before(ctx: RunContext, node: Node) -> str | None:
+    """Why the patient was called, for a booking whose node gave no reason.
+
+    Walks back from the booking to the call_patient node(s) upstream of it. If
+    they agree on a reason, that is the reason for the visit; if there are none,
+    or they disagree, nothing is guessed.
+    """
+    parents: dict[str, list[str]] = {}
+    for source, targets in ctx.graph.edges.items():
+        for _, target in targets:
+            parents.setdefault(target, []).append(source)
+
+    labels: set[str] = set()
+    seen: set[str] = set()
+    stack = list(parents.get(node.id, []))
+    while stack:
+        current = stack.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        upstream = ctx.graph.nodes.get(current)
+        if upstream is None:
+            continue
+        if upstream.node_type == "call_patient":
+            label = policy.call_reason_label(upstream.params)
+            if label:
+                labels.add(label)
+        stack.extend(parents.get(current, []))
+    return labels.pop() if len(labels) == 1 else None
 
 
 def _send_notification(ctx: RunContext, node: Node) -> Outcome:

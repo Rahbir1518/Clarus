@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useUser } from "@clerk/nextjs";
-import { listPatients, createPatient, deletePatient } from "@/services/api";
+import { listPatients, deletePatient } from "@/services/api";
+import { AddPatientDialog } from "@/components/patients/add-patient-dialog";
 
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -24,9 +25,6 @@ export default function PatientsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [showAddPatient, setShowAddPatient] = useState(false);
-  const [patientName, setPatientName] = useState("");
-  const [patientPhone, setPatientPhone] = useState("");
-  const [savingPatient, setSavingPatient] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const { user } = useUser();
@@ -48,26 +46,6 @@ export default function PatientsPage() {
   useEffect(() => {
     fetchPatients();
   }, [fetchPatients]);
-
-  const handleAddPatient = useCallback(async () => {
-    if (!patientName.trim() || !patientPhone.trim()) return;
-    setSavingPatient(true);
-    try {
-      await createPatient({
-        name: patientName.trim(),
-        phone: patientPhone.trim(),
-        doctor_id: doctorId ?? "unknown",
-      });
-      setPatientName("");
-      setPatientPhone("");
-      setShowAddPatient(false);
-      fetchPatients();
-    } catch {
-      /* ignore */
-    } finally {
-      setSavingPatient(false);
-    }
-  }, [patientName, patientPhone, doctorId, fetchPatients]);
 
   const handleDelete = useCallback(async (e: React.MouseEvent, id: string) => {
     e.preventDefault();
@@ -244,43 +222,14 @@ export default function PatientsPage() {
       )}
 
       {showAddPatient && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-card border border-border rounded-xl p-6 w-full max-w-sm shadow-2xl">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-base font-semibold">Add Patient</h2>
-              <button onClick={() => setShowAddPatient(false)} className="text-muted-foreground hover:text-foreground">
-                <X className="size-4" />
-              </button>
-            </div>
-            <label className="block text-xs font-medium text-muted-foreground mb-1">Full Name *</label>
-            <input
-              autoFocus
-              type="text"
-              value={patientName}
-              onChange={(e) => setPatientName(e.target.value)}
-              placeholder="e.g. Jane Doe"
-              className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary mb-3"
-            />
-            <label className="block text-xs font-medium text-muted-foreground mb-1">Phone Number *</label>
-            <input
-              type="tel"
-              value={patientPhone}
-              onChange={(e) => setPatientPhone(e.target.value)}
-              placeholder="e.g. +1 555 000 0000"
-              className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary mb-4"
-            />
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" size="sm" onClick={() => setShowAddPatient(false)}>Cancel</Button>
-              <Button
-                size="sm"
-                disabled={savingPatient || !patientName.trim() || !patientPhone.trim()}
-                onClick={handleAddPatient}
-              >
-                {savingPatient ? "Saving…" : "Save Patient"}
-              </Button>
-            </div>
-          </div>
-        </div>
+        <AddPatientDialog
+          doctorId={doctorId}
+          onClose={() => setShowAddPatient(false)}
+          onCreated={() => {
+            setShowAddPatient(false);
+            fetchPatients();
+          }}
+        />
       )}
     </div>
   );

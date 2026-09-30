@@ -1083,6 +1083,34 @@ def test_a_call_parks_the_run_and_the_webhook_resumes_it(
     assert row["needs_review"] is False
 
 
+def test_a_booking_records_why_the_patient_was_called(
+    client, fake_db, auth_header, placed_calls, calling_allowed
+):
+    """No reason typed on the booking node: the calendar still says why the
+    patient is coming, taken from the call that booked them."""
+    patient = _patient(fake_db)
+    workflow = _workflow(fake_db, *_call_graph(reason_code="medication_review"))
+
+    _run(client, auth_header, workflow["id"], patient["id"])
+    _webhook(client, "conv_1")
+
+    assert fake_db.store["appointments"][0]["reason"] == "Medication review"
+
+
+def test_a_reason_on_the_booking_node_wins_over_the_calls(
+    client, fake_db, auth_header, placed_calls, calling_allowed
+):
+    patient = _patient(fake_db)
+    nodes, edges = _call_graph(reason_code="medication_review")
+    nodes[2] = _node("a1", "schedule_appointment", duration_minutes="20", reason="Blood pressure check")
+    workflow = _workflow(fake_db, nodes, edges)
+
+    _run(client, auth_header, workflow["id"], patient["id"])
+    _webhook(client, "conv_1")
+
+    assert fake_db.store["appointments"][0]["reason"] == "Blood pressure check"
+
+
 def test_a_call_that_reached_nobody_books_nothing_and_asks_for_a_human(
     client, fake_db, auth_header, placed_calls, calling_allowed
 ):
