@@ -21,6 +21,9 @@ So the reason is now a code resolved against a fixed vocabulary, and the callbac
 number comes from configuration. The client picks from a list; it does not write
 a script.
 """
+from datetime import datetime
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.engine.policy import ALLOWED_CALL_REASONS, DEFAULT_REASON_CODE
@@ -78,6 +81,28 @@ class PendingWebCall(BaseModel):
     patient_id: str | None = None
     workflow_id: str | None = None
     created_at: str | None = None
+    # True once the patient has been emailed a link to answer it themselves.
+    emailed: bool = False
+
+
+class CallLinkIssued(BaseModel):
+    """A link to a waiting call, for staff to copy or that was just emailed."""
+
+    url: str
+    expires_at: datetime
+
+
+class CallLinkInfo(BaseModel):
+    """What the page a call link opens shows before anyone answers.
+
+    Only what the page needs to greet the patient in their language: never the
+    patient's name or the reason for the call, which a mistyped email address
+    would otherwise hand to a stranger.
+    """
+
+    status: Literal["ready", "answered", "closed"]
+    practice_name: str
+    language: Literal["en", "bn"]
 
 
 class BindConversation(BaseModel):

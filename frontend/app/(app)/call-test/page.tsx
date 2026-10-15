@@ -10,13 +10,16 @@
  * in the product. Once the chain is proven, drop <WebCall /> wherever it makes
  * sense and this page can go.
  *
- * It is also where workflow calls are answered while CALL_TRANSPORT=web: a
- * run that reaches call_patient parks, appears under "Waiting to be answered",
- * and resumes from the post-call webhook once the conversation ends.
+ * It is also where workflow calls are answered while CALL_TRANSPORT=web or
+ * =email: a run that reaches call_patient parks, appears under "Waiting to be
+ * answered", and resumes from the post-call webhook once the conversation
+ * ends. Each waiting call can be answered here, or handed to the patient as a
+ * link to answer in their own browser.
  */
 
 import { useCallback, useEffect, useState } from "react";
 
+import { CallLinkActions } from "@/components/calls/call-link-actions";
 import { WebCall } from "@/components/calls/web-call";
 import { useLiveEvents } from "@/hooks/useLiveEvents";
 import {
@@ -116,17 +119,24 @@ export default function CallTestPage() {
         </div>
         {pending.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No workflow calls waiting. With CALL_TRANSPORT=web, running a
-            workflow that reaches Call Patient puts its call here.
+            No workflow calls waiting. With CALL_TRANSPORT=web or email,
+            running a workflow that reaches Call Patient puts its call here.
           </p>
         ) : (
           <ul className="flex flex-col gap-2">
             {pending.map((call) => (
               <li key={call.call_log_id} className="rounded-lg border p-4">
-                <div className="mb-3 flex justify-between text-sm">
+                <div className="mb-3 flex items-center justify-between gap-2 text-sm">
                   <span className="font-medium">{patientName(call.patient_id)}</span>
-                  <span className="font-mono text-xs text-muted-foreground">
-                    {call.call_log_id.slice(0, 8)}
+                  <span className="flex items-center gap-2">
+                    {call.emailed && (
+                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
+                        Emailed to patient
+                      </span>
+                    )}
+                    <span className="font-mono text-xs text-muted-foreground">
+                      {call.call_log_id.slice(0, 8)}
+                    </span>
                   </span>
                 </div>
                 <WebCall
@@ -143,6 +153,9 @@ export default function CallTestPage() {
                     }, 4000);
                   }}
                 />
+                <div className="mt-3 border-t pt-3">
+                  <CallLinkActions callLogId={call.call_log_id} onEmailed={refreshPending} />
+                </div>
               </li>
             ))}
           </ul>

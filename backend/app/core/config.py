@@ -68,10 +68,27 @@ class Settings(BaseSettings):
     # imported into ElevenLabs, used with elevenlabs_phone_number_id),
     # "whatsapp" (a WhatsApp Business number connected in ElevenLabs), or "web"
     # (nothing is dialled — the run parks and the call is answered in the
-    # browser, for when there is no number to call from). Same agent, same
-    # dynamic variables, same post-call webhook every way — see
-    # ElevenLabsClient.place_call and routes/calls.py.
+    # browser, for when there is no number to call from), or "email" (also
+    # dials nothing — the run parks and the patient is emailed a link to answer
+    # it in their own browser). Same agent, same dynamic variables, same
+    # post-call webhook every way — see ElevenLabsClient.place_call and
+    # routes/calls.py.
     call_transport: str = "twilio"
+
+    # --- Call links (CALL_TRANSPORT=email) ---------------------------------
+    #
+    # A link lets whoever holds it answer one waiting call without signing in,
+    # so the link itself is the credential: signed with call_link_secret,
+    # expiring after call_link_ttl_hours, and spent once a conversation binds.
+    # Empty secret means no link is ever issued. Generate one with
+    #   python -c "import secrets; print(secrets.token_urlsafe(32))"
+    # and never reuse the webhook secret: that one is shared with ElevenLabs.
+    call_link_secret: str = ""
+    call_link_ttl_hours: int = 24
+    # The frontend's public origin, which the links point at, e.g.
+    # https://clarus.vercel.app. A patient opens it on their own device, so
+    # localhost only works for a link opened on the machine running the app.
+    public_app_url: str = ""
 
     # WhatsApp. The phone number *id* from the ElevenLabs WhatsApp page
     # (menu -> Copy phone number ID), not the number itself.
@@ -163,6 +180,9 @@ class Settings(BaseSettings):
     # which is why the enforcement flag below is separate: lifting the
     # restriction has to be an explicit sentence, not an omission.
     call_allowed_numbers: str = ""
+    # The same restriction for CALL_TRANSPORT=email: comma-separated addresses
+    # that may be sent a call link, under the same enforcement flag.
+    call_allowed_emails: str = ""
     call_allowlist_enforced: bool = True
 
     # Local hours in default_timezone during which a patient may be called,
@@ -200,6 +220,12 @@ class Settings(BaseSettings):
     @property
     def call_allowed_number_list(self) -> list[str]:
         return [n.strip() for n in self.call_allowed_numbers.split(",") if n.strip()]
+
+    @property
+    def call_allowed_email_list(self) -> list[str]:
+        # Lowercased: the domain is case-insensitive, and every real provider
+        # treats the local part that way too.
+        return [e.strip().lower() for e in self.call_allowed_emails.split(",") if e.strip()]
 
     @property
     def cors_origin_list(self) -> list[str]:

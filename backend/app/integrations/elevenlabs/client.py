@@ -41,6 +41,13 @@ TRANSPORTS = ("twilio", "whatsapp")
 # routes/calls.py. Not in TRANSPORTS: those are the ones place_call can dial.
 WEB_TRANSPORT = "web"
 
+# Dials nothing either: the run parks the same way, and the patient is emailed
+# a link to answer the call in their own browser. See app/integrations/call_links.py.
+EMAIL_TRANSPORT = "email"
+
+# The transports answered in a browser rather than dialled.
+BROWSER_TRANSPORTS = frozenset({WEB_TRANSPORT, EMAIL_TRANSPORT})
+
 
 def agent_for_phone(phone: Any) -> str | None:
     """The English agent for a non-+880 number, or None for the default agent.
@@ -282,12 +289,12 @@ class ElevenLabsClient:
             return self.outbound_call(
                 to_number=to_number, dynamic_variables=dynamic_variables
             )
-        if transport == WEB_TRANSPORT:
-            # The engine never gets here on this transport. Anything else that
-            # does — scripts/test_call.py, say — is told why rather than being
-            # given "not one of twilio, whatsapp" for a value that is valid.
+        if transport in BROWSER_TRANSPORTS:
+            # The engine never gets here on these transports. Anything else
+            # that does — scripts/test_call.py, say — is told why rather than
+            # being given "not one of twilio, whatsapp" for a value that is valid.
             raise ElevenLabsError(
-                "CALL_TRANSPORT=web places no outbound call; the call is "
+                f"CALL_TRANSPORT={transport} places no outbound call; the call is "
                 "answered in the browser. Use twilio or whatsapp to dial a number."
             )
         # Unknown is a refusal, not a default: a typo must not route a patient

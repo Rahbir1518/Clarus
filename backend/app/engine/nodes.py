@@ -27,6 +27,7 @@ without one fails the boot rather than a run.
 from __future__ import annotations
 
 import logging
+import smtplib
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Any, Callable, Final
@@ -35,9 +36,13 @@ from app.engine import policy
 from app.engine.catalogue import ALL_NODE_TYPES
 from app.engine.context import RunContext
 from app.engine.graph import FALSE_BRANCH, TRUE_BRANCH, Node
+from app.core.config import MissingConfiguration, require
 from app.engine.policy import PolicyRefusal
 from app.engine.steps import BLOCKED, FAILED, OK, PARKED, SKIPPED
+from app.integrations.call_links import issue_call_link, send_call_link
 from app.integrations.elevenlabs.client import (
+    BROWSER_TRANSPORTS,
+    EMAIL_TRANSPORT,
     WEB_TRANSPORT,
     ElevenLabsClient,
     ElevenLabsError,
@@ -46,6 +51,7 @@ from app.integrations.elevenlabs.variables import build_dynamic_variables
 from app.scheduling.practice import load_schedule
 from app.integrations.elevenlabs.webhook import (
     AWAITING_BROWSER,
+    AWAITING_PATIENT,
     RUN_REF_VARIABLE,
     WHATSAPP_PERMISSION_REQUESTED,
     make_run_ref,
@@ -363,16 +369,34 @@ def _call_patient(ctx: RunContext, node: Node) -> Outcome:
     policy.assert_not_abnormal(abnormal=ctx.abnormal, reason=ctx.abnormal_reason)
 
     # --- whether to dial ---
-    # CALL_TRANSPORT=web dials nothing, so the two gates about the patient's
-    # number do not apply: there is no number in play, and the person who
-    # answers is whoever is signed in to this practice. Every other gate does —
-    # the kill switch, the calling hours and the attempt cap govern whether the
-    # agent may speak to this patient at all, whatever carries the audio.
-    web = ctx.settings.call_transport_name == WEB_TRANSPORT
-    phone = None if web else policy.assert_dialable(ctx.patient.get("phone"))
+    # The browser transports dial nothing, so the two gates about the
+    # patient's number do not apply: there is no number in play. On web the
+    # person who answers is whoever is signed in to this practice; on email it
+    # is whoever opens the link, so the patient's address takes the number's
+    # place and passes the same two kinds of gate. Every other gate applies to
+    # all of them — the kill switch, the calling hours and the attempt cap
+    # govern whether the agent may speak to this patient at all, whatever
+    # carries the audio.
+    transport = ctx.settings.call_transport_name
+    phone = None if transport in BROWSER_TRANSPORTS else policy.assert_dialable(
+        ctx.patient.get("phone")
+    )
+    email = (
+        policy.assert_emailable(ctx.patient.get("email"))
+        if transport == EMAIL_TRANSPORT
+        else None
+    )
     policy.assert_calls_enabled(ctx.settings)
     if phone is not None:
         policy.assert_number_allowed(phone, ctx.settings)
+    if email is not None:
+        policy.assert_email_allowed(email, ctx.settings)
+        try:
+            # Checked before anything is parked: a run that cannot send its
+            # link should stop here, not wait on an email that never went.
+            require("call_link_secret", "public_app_url", "smtp_username", "smtp_password")
+        except MissingConfiguration as exc:
+            return blocked(f"Call links cannot be emailed. {exc}.")
     policy.assert_within_calling_hours(settings=ctx.settings)
     policy.assert_attempts_available(ctx.recent_call_attempts(), ctx.settings)
 
@@ -392,10 +416,12 @@ def _call_patient(ctx: RunContext, node: Node) -> Outcome:
         practice=ctx.scope.practice_settings(),
         settings=ctx.settings,
     )
-    if web:
+    if transport == WEB_TRANSPORT:
         return _await_browser(ctx, variables, reason)
+    if email is not None:
+        return _email_call_link(ctx, variables, reason, email)
 
-    whatsapp = ctx.settings.call_transport_name == "whatsapp"
+    whatsapp = transport == "whatsapp"
     if whatsapp and ctx.settings.elevenlabs_webhook_secret:
         # Lets the webhook find this run if the call is deferred behind a
         # permission request. See run references in webhook.py.
@@ -478,11 +504,7 @@ def _call_patient(ctx: RunContext, node: Node) -> Outcome:
 def _await_browser(ctx: RunContext, variables: dict[str, str], reason: str) -> Outcome:
     """Park the run until the call is answered in the browser.
 
-    The CALL_TRANSPORT=web half of `_call_patient`. Nothing is dialled. The
-    variables are stored on the run's row so that whoever answers later is
-    handed exactly what this run built — rebuilding them at answer time would
-    re-read a patient that may have been edited, and a `today_date` that may
-    have rolled over.
+    The CALL_TRANSPORT=web half of `_call_patient`. Nothing is dialled.
 
     From here on it is the web call path: routes/calls.py mints a token for
     this row, the browser binds its conversation, and the post-call webhook
@@ -490,23 +512,75 @@ def _await_browser(ctx: RunContext, variables: dict[str, str], reason: str) -> O
     after a phone call. No run reference is added — the conversation is bound
     before the call ends, so the webhook never needs one.
     """
-    ctx.scope.update_owned(
-        "call_logs",
-        ctx.call_log_id,
-        {
-            "status": "in_progress",
-            "timezone": ctx.settings.default_timezone,
-            "outcome": AWAITING_BROWSER,
-            "call_variables": variables,
-        },
-    )
-    ctx.call_placed = True
+    _park_for_answer(ctx, variables, AWAITING_BROWSER)
     return Outcome(
         PARKED,
         f"Call about {reason} is ready to answer in the browser (Call test page). "
         f"The run resumes when the post-call webhook arrives.",
         entity={"table": "call_logs", "id": str(ctx.call_log_id)},
     )
+
+
+def _email_call_link(
+    ctx: RunContext, variables: dict[str, str], reason: str, email: str
+) -> Outcome:
+    """Park the run, then email the patient a link to answer the call.
+
+    The CALL_TRANSPORT=email half of `_call_patient`: parked exactly as on web,
+    so the link opens the same waiting call staff could answer from the Call
+    test page — see app/integrations/call_links.py.
+
+    Parked before sending, so the link never points at a row that is not yet
+    waiting. If the email then fails, the call stays parked and answerable and
+    is flagged for review: staff can copy its link from the Call test page,
+    which beats losing a call that is ready to go.
+    """
+    _park_for_answer(ctx, variables, AWAITING_PATIENT)
+    entity = {"table": "call_logs", "id": str(ctx.call_log_id)}
+    try:
+        send_call_link(
+            to=email,
+            link=issue_call_link(str(ctx.call_log_id), ctx.settings),
+            practice_name=variables["practice_name"],
+            language=policy.call_language(ctx.patient.get("phone")),
+            settings=ctx.settings,
+        )
+    except (smtplib.SMTPException, OSError):
+        logger.exception("Call link email for call log %s could not be sent", ctx.call_log_id)
+        ctx.require_review("the call link email could not be sent")
+        return Outcome(
+            PARKED,
+            f"The call about {reason} is waiting, but the email to {email} could not "
+            f"be sent. Copy its link from the Call test page and send it another way.",
+            entity=entity,
+        )
+    return Outcome(
+        PARKED,
+        f"Emailed {email} a link to answer the call about {reason}. The run "
+        f"resumes when the post-call webhook arrives.",
+        entity=entity,
+    )
+
+
+def _park_for_answer(ctx: RunContext, variables: dict[str, str], outcome: str) -> None:
+    """Mark the run's row as a call waiting to be answered in a browser.
+
+    The variables are stored on it so that whoever answers later is handed
+    exactly what this run built — rebuilding them at answer time would re-read
+    a patient that may have been edited, and a `today_date` that may have
+    rolled over.
+    """
+    ctx.scope.update_owned(
+        "call_logs",
+        ctx.call_log_id,
+        {
+            "status": "in_progress",
+            "timezone": ctx.settings.default_timezone,
+            "outcome": outcome,
+            "call_variables": variables,
+        },
+    )
+    ctx.call_placed = True
 
 
 def _send_sms(ctx: RunContext, node: Node) -> Outcome:

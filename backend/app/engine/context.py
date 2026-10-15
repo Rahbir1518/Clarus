@@ -21,11 +21,16 @@ from app.db.tenancy import TenantScope
 from app.engine.graph import Graph
 from app.engine.steps import ExecutionLog
 from app.integrations.elevenlabs.webhook import (
+    AWAITING_PATIENT,
     WHATSAPP_PERMISSION_REQUESTED,
     CallResult,
 )
 
 logger = logging.getLogger(__name__)
+
+# Outcomes a call log carries once the patient has been reached out to but
+# before any conversation exists. Each counts as an attempt.
+_CONTACTED_WITHOUT_CONVERSATION = frozenset({WHATSAPP_PERMISSION_REQUESTED, AWAITING_PATIENT})
 
 # Keys under which an incoming event may carry lab values. Several, because the
 # event body is free-form JSON from whatever produced it — the dashboard's
@@ -249,11 +254,12 @@ class RunContext:
         ):
             if str(row.get("id")) == str(self.call_log_id):
                 continue
-            # A WhatsApp permission request has no conversation yet, but the
-            # patient has been contacted and the call may still happen.
+            # A WhatsApp permission request or an emailed call link has no
+            # conversation yet, but the patient has been contacted and the call
+            # may still happen.
             if (
                 not row.get("conversation_id")
-                and row.get("outcome") != WHATSAPP_PERMISSION_REQUESTED
+                and row.get("outcome") not in _CONTACTED_WITHOUT_CONVERSATION
             ):
                 continue
             created = _parse_timestamp(row.get("created_at"))

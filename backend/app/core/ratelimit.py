@@ -1,6 +1,7 @@
-"""A small in-memory sliding-window rate limiter.
+"""A small in-memory sliding-window rate limiter, and who is being limited.
 
-Enough for the one public form this API has. It lives in the process, so the
+Enough for the public routes this API has: the contact form and the call
+links a patient opens. It lives in the process, so the
 counts reset on restart and are per worker: run several workers or instances
 and each keeps its own tally. That is a softer limit, not a hole — every
 instance still refuses a flood — and the moment it matters the store can move
@@ -11,6 +12,21 @@ from __future__ import annotations
 import threading
 import time
 from collections import deque
+
+from fastapi import Request
+
+from app.core.config import Settings
+
+
+def client_ip(request: Request, settings: Settings) -> str:
+    if settings.trust_forwarded_for:
+        forwarded = request.headers.get("x-forwarded-for", "")
+        # The right-most entry is the one our own proxy appended; anything to
+        # its left came from the client and can say whatever it likes.
+        hops = [h.strip() for h in forwarded.split(",") if h.strip()]
+        if hops:
+            return hops[-1]
+    return request.client.host if request.client else "unknown"
 
 
 class SlidingWindowLimiter:

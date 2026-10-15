@@ -30,7 +30,6 @@ import logging
 import math
 import re
 import smtplib
-import ssl
 from email.message import EmailMessage
 from email.utils import formataddr, make_msgid
 from typing import Literal
@@ -39,7 +38,8 @@ from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.core.config import Settings, get_settings
-from app.core.ratelimit import SlidingWindowLimiter
+from app.core.mail import is_valid_email, send_email, smtp_configured
+from app.core.ratelimit import SlidingWindowLimiter, client_ip
 
 logger = logging.getLogger(__name__)
 
@@ -52,14 +52,6 @@ limiter = SlidingWindowLimiter()
 MIN_FILL_MS = 3000
 MAX_LINKS = 3
 
-# Deliberately conservative: a real address fits it, and nothing that could
-# smuggle a header or a second recipient does.
-_EMAIL = re.compile(
-    r"^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+"
-    r"@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
-    r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*"
-    r"\.[A-Za-z]{2,63}$"
-)
 # Any C0/C1 control character, which includes CR and LF.
 _CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 # The same, minus newline and tab, which a message body may contain.
@@ -103,7 +95,7 @@ class ContactRequest(BaseModel):
     @field_validator("email")
     @classmethod
     def _email(cls, value: str) -> str:
-        if not _EMAIL.fullmatch(value) or ".." in value:
+        if not is_valid_email(value):
             raise ValueError("Enter a valid email address")
         return value
 
@@ -115,17 +107,6 @@ class ContactRequest(BaseModel):
         if len(_LINK.findall(value)) > MAX_LINKS:
             raise ValueError(f"Please include no more than {MAX_LINKS} links")
         return value
-
-
-def client_ip(request: Request, settings: Settings) -> str:
-    if settings.trust_forwarded_for:
-        forwarded = request.headers.get("x-forwarded-for", "")
-        # The right-most entry is the one our own proxy appended; anything to
-        # its left came from the client and can say whatever it likes.
-        hops = [h.strip() for h in forwarded.split(",") if h.strip()]
-        if hops:
-            return hops[-1]
-    return request.client.host if request.client else "unknown"
 
 
 def _check_rate(ip: str, settings: Settings) -> None:
@@ -172,20 +153,6 @@ def build_message(body: ContactRequest, settings: Settings) -> EmailMessage:
     return msg
 
 
-def send_email(msg: EmailMessage, settings: Settings) -> None:
-    """Send through the configured account. Separate so tests can replace it."""
-    context = ssl.create_default_context()
-    if settings.smtp_port == 465:
-        with smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, timeout=15, context=context) as smtp:
-            smtp.login(settings.smtp_username, settings.smtp_password)
-            smtp.send_message(msg)
-    else:
-        with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=15) as smtp:
-            smtp.starttls(context=context)
-            smtp.login(settings.smtp_username, settings.smtp_password)
-            smtp.send_message(msg)
-
-
 @router.post("", status_code=status.HTTP_202_ACCEPTED)
 def submit_contact(body: ContactRequest, request: Request) -> dict:
     settings = get_settings()
@@ -201,7 +168,7 @@ def submit_contact(body: ContactRequest, request: Request) -> dict:
         )
         return {"ok": True}
 
-    if not settings.smtp_username or not settings.smtp_password:
+    if not smtp_configured(settings):
         logger.error("Contact form used but SMTP_USERNAME/SMTP_PASSWORD are not set")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

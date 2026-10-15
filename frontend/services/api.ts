@@ -168,6 +168,7 @@ export async function getPatient(patientId: string) {
 export async function createPatient(payload: {
   name: string;
   phone: string;
+  email?: string;
   doctor_id: string;
 }) {
   const response = await fetch(`${API_URL}/api/patients`, {
@@ -184,6 +185,7 @@ export async function updatePatient(
   payload: {
     name?: string;
     phone?: string;
+    email?: string | null;
     dob?: string | null;
     mrn?: string | null;
     insurance?: string | null;
@@ -198,6 +200,8 @@ export async function updatePatient(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
+  // A refused save returned its error body as though it were the patient.
+  if (!response.ok) throw new Error(await errorMessage(response, 'Could not save the patient'));
   return response.json();
 }
 
@@ -391,6 +395,8 @@ export type PendingWebCall = {
   patient_id: string | null;
   workflow_id: string | null;
   created_at: string | null;
+  // The patient has been emailed a link to answer it themselves.
+  emailed: boolean;
 };
 
 export async function listPendingWebCalls(): Promise<PendingWebCall[]> {
@@ -410,6 +416,77 @@ export async function answerWebCall(callLogId: string): Promise<WebCallStarted> 
   // 409: already answered, or not a call that is waiting.
   if (!response.ok) throw new Error(`Could not answer the call (${response.status})`);
   return response.json();
+}
+
+// A link the patient can answer a waiting call from, in their own browser.
+// Signed, single-use and expiring; see backend/app/integrations/call_links.py.
+export type CallLinkIssued = {
+  url: string;
+  expires_at: string;
+};
+
+// For staff to send however they like — when the email did not arrive, or on
+// CALL_TRANSPORT=web, where none is sent.
+export async function getCallLink(callLogId: string): Promise<CallLinkIssued> {
+  const response = await fetch(`${API_URL}/api/calls/web/${callLogId}/link`, { method: 'POST' });
+  if (!response.ok) throw new Error(await errorMessage(response, 'Could not create the link'));
+  return response.json();
+}
+
+// Email the link to the address on the patient's record.
+export async function emailCallLink(callLogId: string): Promise<CallLinkIssued> {
+  const response = await fetch(`${API_URL}/api/calls/web/${callLogId}/email`, { method: 'POST' });
+  if (!response.ok) throw new Error(await errorMessage(response, 'Could not email the link'));
+  return response.json();
+}
+
+// ---------------------------------------------------------------------------
+// Call links: the patient's side
+//
+// No session — the patient has no account. The signed link in the URL is the
+// credential, so these use the browser's own fetch rather than this module's
+// authorised one, which would attach whatever staff session happens to exist.
+// ---------------------------------------------------------------------------
+
+export type CallLinkInfo = {
+  status: 'ready' | 'answered' | 'closed';
+  practice_name: string;
+  language: 'en' | 'bn';
+};
+
+// Carries the HTTP status, so the page can tell an expired link (410) from
+// one that was never valid (404).
+export class CallLinkError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
+
+async function callLinkRequest(token: string, path: string, init?: RequestInit): Promise<Response> {
+  const response = await globalThis.fetch(
+    `${API_URL}/api/call-links/${encodeURIComponent(token)}${path}`,
+    init,
+  );
+  if (!response.ok) {
+    throw new CallLinkError(await errorMessage(response, 'This call link could not be opened'), response.status);
+  }
+  return response;
+}
+
+export async function describeCallLink(token: string): Promise<CallLinkInfo> {
+  return (await callLinkRequest(token, '')).json();
+}
+
+export async function answerCallLink(token: string): Promise<WebCallStarted> {
+  return (await callLinkRequest(token, '/answer', { method: 'POST' })).json();
+}
+
+export async function bindCallLink(token: string, conversationId: string): Promise<void> {
+  await callLinkRequest(token, '/bind', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ conversation_id: conversationId }),
+  });
 }
 
 // ---------------------------------------------------------------------------

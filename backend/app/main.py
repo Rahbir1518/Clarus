@@ -93,6 +93,9 @@ app.include_router(call_logs.router, prefix="/api")
 app.include_router(appointments.router, prefix="/api")
 app.include_router(practice.router, prefix="/api")
 app.include_router(calls.router, prefix="/api")
+# Authenticated by a signed call link, not a session: the patient answering
+# has no account. See app/integrations/call_links.py.
+app.include_router(calls.public_router, prefix="/api")
 app.include_router(events.router, prefix="/api")
 # Signature-authenticated, not token-authenticated. See routes/webhooks.py.
 app.include_router(webhooks.router, prefix="/api")
