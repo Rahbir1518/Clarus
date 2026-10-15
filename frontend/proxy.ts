@@ -26,6 +26,10 @@ const isPublicRoute = createRouteMatcher([
   "/pricing",
   "/signIn(.*)",
   "/signUp(.*)",
+  // A patient answering an emailed call link has no account; the signed token
+  // in the URL is checked by the backend instead. "/call/" with the slash, so
+  // the staff-only /call-test page does not match.
+  "/call/(.*)",
 ]);
 
 export default clerkMiddleware(async (auth, request) => {

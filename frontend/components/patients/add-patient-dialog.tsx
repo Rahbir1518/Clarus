@@ -9,6 +9,10 @@
  * NANP number, and so on. Ranges that were never assigned or have been retired
  * are refused too. What is saved is the E.164 form (+8801…), which is what the
  * calling path dials.
+ *
+ * The email is optional. It is where a call link is sent on
+ * CALL_TRANSPORT=email; the backend validates it properly, this only catches
+ * an obvious typo before the round trip.
  */
 
 import { useMemo, useState } from "react";
@@ -28,6 +32,8 @@ import { createPatient } from "@/services/api";
 
 // The pilot's country first; everything else follows alphabetically.
 const DEFAULT_COUNTRY: CountryCode = "BD";
+
+const LOOKS_LIKE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const regionNames =
   typeof Intl !== "undefined" && "DisplayNames" in Intl
@@ -90,6 +96,7 @@ export function AddPatientDialog({
   const [name, setName] = useState("");
   const [country, setCountry] = useState<CountryCode>(DEFAULT_COUNTRY);
   const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
   const [touched, setTouched] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -106,15 +113,21 @@ export function AddPatientDialog({
 
   const check = checkPhone(phone, country);
   const example = getExampleNumber(country, examples);
-  const canSave = !saving && name.trim().length > 0 && check.ok;
+  const emailOk = !email.trim() || LOOKS_LIKE_EMAIL.test(email.trim());
+  const canSave = !saving && name.trim().length > 0 && check.ok && emailOk;
 
   const save = async () => {
     setTouched(true);
-    if (!name.trim() || !check.ok) return;
+    if (!name.trim() || !check.ok || !emailOk) return;
     setSaving(true);
     setError(null);
     try {
-      const created = await createPatient({ name: name.trim(), phone: check.e164, doctor_id: doctorId ?? "unknown" });
+      const created = await createPatient({
+        name: name.trim(),
+        phone: check.e164,
+        email: email.trim() || undefined,
+        doctor_id: doctorId ?? "unknown",
+      });
       onCreated(created);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not add the patient.");
@@ -177,6 +190,22 @@ export function AddPatientDialog({
           ) : check.ok ? (
             <span className="text-muted-foreground">Will be saved as {check.e164}</span>
           ) : null}
+        </p>
+        <label className="block text-xs font-medium text-muted-foreground mb-1">Email</label>
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="e.g. jane@example.com"
+          aria-invalid={!emailOk}
+          className={`${inputClass} ${!emailOk ? "border-destructive focus:ring-destructive" : ""}`}
+        />
+        <p className="mt-1 mb-4 min-h-4 text-[11px]">
+          {!emailOk ? (
+            <span className="text-destructive">Enter a valid email address.</span>
+          ) : (
+            <span className="text-muted-foreground">Optional. Call links are sent here.</span>
+          )}
         </p>
         {error && (
           <p className="mb-3 text-sm text-destructive" role="alert">

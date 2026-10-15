@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import {
   ArrowLeft,
   Calendar,
+  Mail,
   Phone,
   Shield,
   Stethoscope,
@@ -69,9 +70,10 @@ export default function PatientDetailPage({
   const [loading, setLoading] = useState(true);
   const [editingProfile, setEditingProfile] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
 
   const [profileForm, setProfileForm] = useState({
-    name: "", phone: "", dob: "", mrn: "", insurance: "",
+    name: "", phone: "", email: "", dob: "", mrn: "", insurance: "",
     primary_physician: "", last_visit: "", risk_level: "low", notes: "",
   });
 
@@ -123,6 +125,7 @@ export default function PatientDetailPage({
       setProfileForm({
         name: p.name || "",
         phone: p.phone || "",
+        email: p.email || "",
         dob: p.dob || "",
         mrn: p.mrn || "",
         insurance: p.insurance || "",
@@ -142,6 +145,7 @@ export default function PatientDetailPage({
 
   const handleSaveProfile = useCallback(async () => {
     setSavingProfile(true);
+    setProfileError(null);
     try {
       const payload: Record<string, string | null> = {};
       for (const [k, v] of Object.entries(profileForm)) {
@@ -151,8 +155,11 @@ export default function PatientDetailPage({
       const updated = await updatePatient(patientId, payload);
       setPatient(updated);
       setEditingProfile(false);
-    } catch { /* ignore */ }
-    finally { setSavingProfile(false); }
+    } catch (e) {
+      setProfileError(e instanceof Error ? e.message : "Could not save the profile.");
+    } finally {
+      setSavingProfile(false);
+    }
   }, [patientId, profileForm]);
 
   const handleAddCondition = useCallback(async () => {
@@ -327,6 +334,7 @@ export default function PatientDetailPage({
             {!editingProfile && (
               <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 lg:grid-cols-4">
                 <InfoItem icon={Phone} label="Phone" value={patient.phone} />
+                <InfoItem icon={Mail} label="Email" value={patient.email || "—"} />
                 <InfoItem icon={Calendar} label="Last Visit" value={patient.last_visit || "—"} />
                 <InfoItem icon={Stethoscope} label="Primary Physician" value={patient.primary_physician || "—"} />
                 <InfoItem icon={Shield} label="Insurance" value={patient.insurance || "—"} />
@@ -349,6 +357,7 @@ export default function PatientDetailPage({
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <FormField label="Full Name" value={profileForm.name} onChange={(v) => setProfileForm((f) => ({ ...f, name: v }))} />
               <FormField label="Phone" value={profileForm.phone} onChange={(v) => setProfileForm((f) => ({ ...f, phone: v }))} />
+              <FormField label="Email" value={profileForm.email} onChange={(v) => setProfileForm((f) => ({ ...f, email: v }))} type="email" placeholder="Call links are sent here" />
               <FormField label="Date of Birth" value={profileForm.dob} onChange={(v) => setProfileForm((f) => ({ ...f, dob: v }))} type="date" />
               <FormField label="MRN" value={profileForm.mrn} onChange={(v) => setProfileForm((f) => ({ ...f, mrn: v }))} placeholder="e.g. MRN-2024-0847" />
               <FormField label="Insurance" value={profileForm.insurance} onChange={(v) => setProfileForm((f) => ({ ...f, insurance: v }))} placeholder="e.g. Blue Cross Blue Shield" />
@@ -384,6 +393,11 @@ export default function PatientDetailPage({
                 {savingProfile ? "Saving…" : "Save Profile"}
               </Button>
             </div>
+            {profileError && (
+              <p className="mt-2 text-right text-sm text-destructive" role="alert">
+                {profileError}
+              </p>
+            )}
           </div>
         )}
       </div>
