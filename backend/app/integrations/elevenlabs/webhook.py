@@ -124,6 +124,16 @@ WHATSAPP_PERMISSION_REQUESTED = "whatsapp_permission_requested"
 # webhook arrives, exactly as the WhatsApp marker above is.
 AWAITING_BROWSER = "awaiting_browser"
 
+# The same wait, for a call whose link has been emailed to the patient
+# (CALL_TRANSPORT=email). A separate marker because the patient has now been
+# contacted: it counts towards their attempts the way a WhatsApp permission
+# request does, where a call parked for staff to answer does not.
+AWAITING_PATIENT = "awaiting_patient"
+
+# Every state in which a call waits to be answered in a browser, by staff on
+# the Call test page or by the patient through a link.
+AWAITING_ANSWER = frozenset({AWAITING_BROWSER, AWAITING_PATIENT})
+
 
 def _run_ref_digest(call_log_id: str, secret: str) -> str:
     message = f"clarus-run-ref:{call_log_id}".encode()

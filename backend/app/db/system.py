@@ -112,6 +112,31 @@ def claim_call_log_for_conversation(
         raise NotFound("Call log")
 
 
+def get_call_log_for_link(client: Any, call_log_id: str) -> dict:
+    """Read the call log a verified call link names.
+
+    `call_log_id` must come from app.integrations.call_links.read_call_link,
+    never from a request field taken at face value: the link's signature is the
+    capability here, the way conversation_id is for the webhook functions
+    above.
+
+    Unlike those, a soft-deleted row is not found. A call deleted before it was
+    answered was withdrawn, and its link should stop working with it.
+    """
+    if not call_log_id:
+        raise NotFound("Call log")
+    rows = _rows(
+        client.table("call_logs")
+        .select("*")
+        .eq("id", call_log_id)
+        .is_("deleted_at", "null")
+        .execute()
+    )
+    if not rows:
+        raise NotFound("Call log")
+    return rows[0]
+
+
 def get_workflow_by_id(client: Any, workflow_id: str) -> dict:
     """Read one workflow by id, with no tenant to scope to.
 

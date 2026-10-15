@@ -9,6 +9,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.core.mail import is_valid_email
 from app.schemas.common import REQUEST_CONFIG as _REQUEST_CONFIG
 from app.schemas.common import blank_to_none as _blank_to_none
 
@@ -16,6 +17,17 @@ from app.schemas.common import blank_to_none as _blank_to_none
 # middle value is "moderate", not "medium": mismatched, every write carrying it
 # fails in the database as a 500 rather than in Pydantic as a 422.
 RiskLevel = Literal["low", "moderate", "high"]
+
+
+def _checked_email(value: str | None) -> str | None:
+    """A call link is emailed here, so a typo is caught when it is entered
+    rather than when a workflow tries to send to it."""
+    if value is None:
+        return None
+    value = value.strip()
+    if not is_valid_email(value):
+        raise ValueError("Enter a valid email address")
+    return value
 
 
 class PatientCreate(BaseModel):
@@ -36,6 +48,7 @@ class PatientCreate(BaseModel):
         "email", "dob", "mrn", "insurance", "primary_physician", "last_visit", "notes",
         mode="before",
     )(_blank_to_none)
+    _email = field_validator("email")(_checked_email)
 
 
 class PatientUpdate(BaseModel):
@@ -56,6 +69,7 @@ class PatientUpdate(BaseModel):
         "email", "dob", "mrn", "insurance", "primary_physician", "last_visit", "notes",
         mode="before",
     )(_blank_to_none)
+    _email = field_validator("email")(_checked_email)
 
 
 class PatientRead(BaseModel):

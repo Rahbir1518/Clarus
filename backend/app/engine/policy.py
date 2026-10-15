@@ -19,6 +19,7 @@ from typing import Any, Final
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.core.config import Settings, get_settings
+from app.core.mail import is_valid_email
 
 
 class PolicyRefusal(Exception):
@@ -264,6 +265,44 @@ def assert_number_allowed(phone: str, settings: Settings | None = None) -> None:
         raise PolicyRefusal(
             f"{normalise_phone(phone)} is not on the outbound call allowlist. "
             f"Development may only call numbers listed in CALL_ALLOWED_NUMBERS."
+        )
+
+
+def assert_emailable(email: Any) -> str:
+    """Require an address a call link can be sent to, and return it trimmed.
+
+    The CALL_TRANSPORT=email counterpart of assert_dialable: a patient with no
+    usable address is refused here, before anything is parked, rather than
+    after a link has been minted with nowhere to go.
+    """
+    address = str(email or "").strip()
+    if not address:
+        raise PolicyRefusal(
+            "The patient has no email address, so there is nowhere to send the "
+            "call link. Add one to their record."
+        )
+    if not is_valid_email(address):
+        raise PolicyRefusal(f"The patient's email address {address!r} is not valid.")
+    return address
+
+
+def assert_email_allowed(email: str, settings: Settings | None = None) -> None:
+    """The stage-1 allowlist for call links, read exactly as the number one is:
+    an empty list while enforcement is on means nobody can be emailed."""
+    settings = settings or get_settings()
+    if not settings.call_allowlist_enforced:
+        return
+
+    allowed = set(settings.call_allowed_email_list)
+    if not allowed:
+        raise PolicyRefusal(
+            "The call link allowlist is empty, so no one can be emailed a link. "
+            "Add your own address to CALL_ALLOWED_EMAILS to send test links."
+        )
+    if email.strip().lower() not in allowed:
+        raise PolicyRefusal(
+            f"{email} is not on the call link allowlist. Development may only "
+            f"email addresses listed in CALL_ALLOWED_EMAILS."
         )
 
 
