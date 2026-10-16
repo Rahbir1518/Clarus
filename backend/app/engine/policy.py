@@ -274,6 +274,11 @@ def assert_emailable(email: Any) -> str:
     The CALL_TRANSPORT=email counterpart of assert_dialable: a patient with no
     usable address is refused here, before anything is parked, rather than
     after a link has been minted with nowhere to go.
+
+    There is no allowlist to pass as well, unlike a number. A call dialled in
+    error rings whoever holds that number; a link can only reach the address
+    the doctor entered on this patient's record, which is the decision to
+    contact them.
     """
     address = str(email or "").strip()
     if not address:
@@ -284,26 +289,6 @@ def assert_emailable(email: Any) -> str:
     if not is_valid_email(address):
         raise PolicyRefusal(f"The patient's email address {address!r} is not valid.")
     return address
-
-
-def assert_email_allowed(email: str, settings: Settings | None = None) -> None:
-    """The stage-1 allowlist for call links, read exactly as the number one is:
-    an empty list while enforcement is on means nobody can be emailed."""
-    settings = settings or get_settings()
-    if not settings.call_allowlist_enforced:
-        return
-
-    allowed = set(settings.call_allowed_email_list)
-    if not allowed:
-        raise PolicyRefusal(
-            "The call link allowlist is empty, so no one can be emailed a link. "
-            "Add your own address to CALL_ALLOWED_EMAILS to send test links."
-        )
-    if email.strip().lower() not in allowed:
-        raise PolicyRefusal(
-            f"{email} is not on the call link allowlist. Development may only "
-            f"email addresses listed in CALL_ALLOWED_EMAILS."
-        )
 
 
 def calling_zone(settings: Settings | None = None) -> ZoneInfo:
