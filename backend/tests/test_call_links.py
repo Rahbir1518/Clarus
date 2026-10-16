@@ -51,7 +51,6 @@ def email_calls(monkeypatch: pytest.MonkeyPatch) -> _Recorder:
     for name, value in {
         "CALL_TRANSPORT": "email",
         "CALLS_ENABLED": "true",
-        "CALL_ALLOWED_EMAILS": PATIENT_EMAIL,
         "CALLING_HOURS_START": "0",
         "CALLING_HOURS_END": "24",
         "PRACTICE_CALLBACK_NUMBER": "+8802000000000",
@@ -319,14 +318,20 @@ def test_a_patient_without_a_usable_address_is_not_contacted(
     assert email_calls.emails == []
 
 
-def test_an_address_off_the_allowlist_is_not_emailed(
-    client, fake_db, auth_header, email_calls
+def test_the_address_the_doctor_entered_is_all_it_takes(
+    client, fake_db, auth_header, email_calls, monkeypatch
 ):
-    started = _run(client, auth_header, fake_db, _patient(fake_db, email="someone@else.com"))
+    """No server-side list to add patients to: the phone allowlist, enforced
+    and empty, would refuse any number — and stays out of an email call."""
+    monkeypatch.setenv("CALL_ALLOWLIST_ENFORCED", "true")
+    monkeypatch.setenv("CALL_ALLOWED_NUMBERS", "")
+    get_settings.cache_clear()
 
-    assert _call_step(started)["status"] == "blocked"
-    assert "CALL_ALLOWED_EMAILS" in _call_step(started)["message"]
-    assert email_calls.emails == []
+    started = _run(client, auth_header, fake_db, _patient(fake_db, email="new.patient@example.org"))
+
+    assert started.json()["status"] == "parked"
+    (email,) = email_calls.emails
+    assert email["To"] == "new.patient@example.org"
 
 
 def test_the_kill_switch_stops_an_email_call(

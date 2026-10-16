@@ -372,11 +372,10 @@ def _call_patient(ctx: RunContext, node: Node) -> Outcome:
     # The browser transports dial nothing, so the two gates about the
     # patient's number do not apply: there is no number in play. On web the
     # person who answers is whoever is signed in to this practice; on email it
-    # is whoever opens the link, so the patient's address takes the number's
-    # place and passes the same two kinds of gate. Every other gate applies to
-    # all of them — the kill switch, the calling hours and the attempt cap
-    # govern whether the agent may speak to this patient at all, whatever
-    # carries the audio.
+    # is whoever opens the link, so the patient needs a usable address on
+    # their record instead. Every other gate applies to all of them — the kill
+    # switch, the calling hours and the attempt cap govern whether the agent
+    # may speak to this patient at all, whatever carries the audio.
     transport = ctx.settings.call_transport_name
     phone = None if transport in BROWSER_TRANSPORTS else policy.assert_dialable(
         ctx.patient.get("phone")
@@ -390,7 +389,6 @@ def _call_patient(ctx: RunContext, node: Node) -> Outcome:
     if phone is not None:
         policy.assert_number_allowed(phone, ctx.settings)
     if email is not None:
-        policy.assert_email_allowed(email, ctx.settings)
         try:
             # Checked before anything is parked: a run that cannot send its
             # link should stop here, not wait on an email that never went.

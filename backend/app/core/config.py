@@ -180,9 +180,6 @@ class Settings(BaseSettings):
     # which is why the enforcement flag below is separate: lifting the
     # restriction has to be an explicit sentence, not an omission.
     call_allowed_numbers: str = ""
-    # The same restriction for CALL_TRANSPORT=email: comma-separated addresses
-    # that may be sent a call link, under the same enforcement flag.
-    call_allowed_emails: str = ""
     call_allowlist_enforced: bool = True
 
     # Local hours in default_timezone during which a patient may be called,
@@ -220,12 +217,6 @@ class Settings(BaseSettings):
     @property
     def call_allowed_number_list(self) -> list[str]:
         return [n.strip() for n in self.call_allowed_numbers.split(",") if n.strip()]
-
-    @property
-    def call_allowed_email_list(self) -> list[str]:
-        # Lowercased: the domain is case-insensitive, and every real provider
-        # treats the local part that way too.
-        return [e.strip().lower() for e in self.call_allowed_emails.split(",") if e.strip()]
 
     @property
     def cors_origin_list(self) -> list[str]:

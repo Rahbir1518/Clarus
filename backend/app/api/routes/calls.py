@@ -208,9 +208,9 @@ def get_call_link(call_log_id: str, scope: TenantDep) -> dict:
 def email_call_link(call_log_id: str, scope: TenantDep) -> dict:
     """Email the patient a link to this waiting call.
 
-    The same gates as the call_patient node sending one: the kill switch, a
-    usable address, and the allowlist. Afterwards the call counts as an
-    attempt on the patient, as one emailed by a workflow does.
+    The same gates as the call_patient node sending one: the kill switch and
+    a usable address. Afterwards the call counts as an attempt on the
+    patient, as one emailed by a workflow does.
     """
     row = _waiting_call(scope, call_log_id)
     settings = get_settings()
@@ -218,7 +218,6 @@ def email_call_link(call_log_id: str, scope: TenantDep) -> dict:
     try:
         policy.assert_calls_enabled(settings)
         email = policy.assert_emailable(patient.get("email"))
-        policy.assert_email_allowed(email, settings)
     except policy.PolicyRefusal as exc:
         raise Conflict(str(exc)) from None
 
